@@ -1,0 +1,15 @@
+# Memory Bank: Project Brief
+
+## Maintain Project Context Across Sessions and Memory Resets for Consistent AI-Assisted Development
+An AI-assisted tool that ingests a solution description and automatically generates a structured draft Responsible AI (RAI) Impact Assessment (internal + public variants). It orchestrates a multi-step LLM pipeline (Intended Uses → Stakeholders → Risks → Harms → Disclosures) producing token-populated DOCX templates while tracking token cost, enabling faster, standardized compliance workflows. Human review remains required; system focuses on acceleration, coverage, and consistency.
+
+Core Differentiators:
+- Deterministic template token substitution with conditional section pruning
+- Structured JSON transformation layer per step
+- Optional prompt compression to reduce cost
+- Integrated Azure security primitives (Key Vault, Managed Identity)
+- Dual output formats from one generation run
+
+Primary Stakeholders: AI solution architects, compliance / RAI reviewers, engineering teams preparing assessment packages.
+
+Key Risks to Mitigate Next: resilience (error handling), structured logging, test coverage, multi-user scaling & cache integrity.
