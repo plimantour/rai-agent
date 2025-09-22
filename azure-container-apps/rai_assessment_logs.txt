@@ -1,0 +1,210 @@
+20240621164857 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted20240622092453 -  : Unauthorized access attempt20240622092536 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted20240622094440 -  : Unauthorized access attempt20240622094508 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted20240622094558 -  : Unauthorized access attempt20240622094600 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted20240622094907 -  : Unauthorized access attempt20240622094907 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted20240622095040 -  : Unauthorized access attempt20240622095156 -  : Unauthorized access attempt20240622095938 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622101750 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Changed parameter use_prompt_compression to None
+20240622101805 -  : Unauthorized access attempt
+20240622101806 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622124246 - None - None - None : Access granted
+20240622124326 - None - None - None : Access granted
+20240622124452 -  : Unauthorized access attempt
+20240622124500 -  : Unauthorized access attempt
+20240622110931 -  : Unauthorized access attempt
+20240622-11:18:10 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622-11:18:23 - Philippe Limantour : Changed parameter use_cache to None
+20240622-11:18:24 - Philippe Limantour : Changed parameter use_cache to None
+20240622-12:14:52 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622-12:16:28 - Philippe Limantour : Changed parameter use_cache to Do not use cached answers
+20240622-12:16:32 - Philippe Limantour : Changed parameter use_cache to Use cached answers
+20240622-15:11:12 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622-15:43:03 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622-15:53:33 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240622-18:07:46 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240623-12:14:43 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240627-15:50:12 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240724-16:44:43 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240724-16:45:18 - Philippe Beraud - Philippe.Beraud@microsoft.com - philber@microsoft.com : Access granted
+20240824-18:10:43 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240824-18:20:42 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:18:54 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:26:11 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:41:56 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:52:08 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:52:17 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:55:53 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-07:56:36 - Philippe Limantour : Analyze the solution description - rai_solution_description.docx
+20240825-07:56:47 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - rai_solution_description.docx_analysis_bcab2e2a07c1a4381f684a36c8e58e13.docx
+20240825-07:57:14 - Philippe Limantour : Generate draft RAI assessment - rai_solution_description.docx
+20240825-08:09:01 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - rai_solution_description.docx_draftRAI_MsInternal_19763a07ca854582614761dfdc0047d8.docx
+20240825-08:09:02 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - rai_solution_description.docx_draftRAI_19763a07ca854582614761dfdc0047d8.docx
+20240825-08:23:42 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-08:32:50 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-09:37:32 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-09:52:18 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-09:53:26 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-09:53:50 - Philippe Limantour : Analyze the solution description - rai_solution_description.docx
+20240825-09:54:02 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - rai_solution_description_analysis_6d884fef7f2595589e9a4cbbd40cd0b3.docx
+20240825-09:54:24 - Philippe Limantour : Generate draft RAI assessment - rai_solution_description.docx
+20240825-10:05:34 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-10:05:45 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-10:06:12 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-10:07:40 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-10:07:55 - Philippe Limantour : Analyze the solution description - rai_solution_description.docx
+20240825-10:07:56 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - rai_solution_description_analysis_ab8f6d484a43ab236da6123b25971e91.docx
+20240825-11:49:06 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-11:49:24 - Philippe Limantour : Analyze the solution description - solution_description.docx
+20240825-11:49:29 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_1e4d91b7f39026c42c3a081225d6fc72.docx
+20240825-11:50:36 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240825-12:01:16 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - solution_description_draftRAI_MsInternal_864025f8f083012fc615496a6b5c1397.docx
+20240825-12:01:17 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - solution_description_draftRAI_864025f8f083012fc615496a6b5c1397.docx
+20240825-13:02:08 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-16:14:26 -  : Unauthorized access attempt
+20240825-16:18:37 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240825-16:18:57 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240825-16:29:42 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - solution_description_draftRAI_MsInternal_593079f5ec16bba98c3a3e4dc4f0ef1a.docx
+20240825-16:29:43 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessment - solution_description_draftRAI_593079f5ec16bba98c3a3e4dc4f0ef1a.docx
+20240825-18:02:21 -  : Unauthorized access attempt
+20240825-18:02:32 -  : Unauthorized access attempt
+20240825-18:02:47 -  : Unauthorized access attempt
+20240825-18:03:26 -  : Unauthorized access attempt
+20240825-18:07:03 -  : Unauthorized access attempt
+20240825-18:08:28 -  : Unauthorized access attempt
+20240825-18:08:34 -  : Unauthorized access attempt
+20240825-18:08:42 -  : Unauthorized access attempt
+20240826-06:25:20 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240826-06:25:48 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240826-06:29:01 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_55918dad250c3fd4afc89002949b54ce.docx and solution_description_draftRAI_55918dad250c3fd4afc89002949b54ce.docx
+20240826-06:29:18 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_55918dad250c3fd4afc89002949b54ce.docx and solution_description_draftRAI_55918dad250c3fd4afc89002949b54ce.docx
+20240826-06:29:59 - Philippe Limantour : Changed parameter use_prompt_compression to Do not use prompt compression
+20240826-06:30:08 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240826-06:30:28 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_2b89ce534ca404d125a45baf9e051068.docx and solution_description_draftRAI_2b89ce534ca404d125a45baf9e051068.docx
+20240826-06:30:31 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_2b89ce534ca404d125a45baf9e051068.docx and solution_description_draftRAI_2b89ce534ca404d125a45baf9e051068.docx
+20240826-10:01:32 - Philippe Beraud - Philippe.Beraud@microsoft.com - philber@microsoft.com : Access granted
+20240826-10:01:52 - Philippe Beraud : Analyze the solution description - Questions for the Intake call.docx
+20240826-10:01:58 - Philippe Beraud : Downloading the AI-generated Analysis ofthe solution description - Questions for the Intake call_analysis_fee1a5a018d6058e53ff031623a02eaa.docx
+20240826-10:02:36 - Philippe Beraud : Generate draft RAI assessment - Questions for the Intake call.docx
+20240826-10:03:08 - Philippe Beraud : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Questions for the Intake call_draftRAI_MsInternal_9f6900eb314d1e7f1e5521c920902d4f.docx and Questions for the Intake call_draftRAI_9f6900eb314d1e7f1e5521c920902d4f.docx
+20240826-10:03:12 - Philippe Beraud : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Questions for the Intake call_draftRAI_MsInternal_9f6900eb314d1e7f1e5521c920902d4f.docx and Questions for the Intake call_draftRAI_9f6900eb314d1e7f1e5521c920902d4f.docx
+20240826-11:23:58 - Philippe Beraud - Philippe.Beraud@microsoft.com - philber@microsoft.com : Access granted
+20240826-14:00:51 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240826-14:01:34 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240826-14:01:58 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_620812d887ebc50c92a9c3608022e6d6.docx and solution_description_draftRAI_620812d887ebc50c92a9c3608022e6d6.docx
+20240826-14:02:02 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_620812d887ebc50c92a9c3608022e6d6.docx and solution_description_draftRAI_620812d887ebc50c92a9c3608022e6d6.docx
+20240826-14:02:26 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240827-15:31:09 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240827-15:31:16 - Pierre Lagarde - pierlag@microsoft.com - pierlag@microsoft.com : Access granted
+20240829-06:35:10 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240829-06:48:33 - Philippe Limantour : Analyze the solution description - solution_description.docx
+20240829-06:48:35 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_07555304c190e51e46f1c414b2fad179.docx
+20240829-08:22:08 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240829-08:42:33 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240829-08:44:05 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240829-11:28:50 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240829-11:29:56 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240902-07:37:57 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240902-07:53:47 - Philippe Limantour : Analyze the solution description - CopilotForJob_solutiondescription.docx
+20240902-07:53:53 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - CopilotForJob_solutiondescription_analysis_4dbba7a9a474946cf37065d5a0b0c443.docx
+20240902-07:54:11 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240902-07:55:23 - Philippe Limantour : Analyze the solution description - CopilotForJob_solutiondescription.docx
+20240902-07:55:25 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - CopilotForJob_solutiondescription_analysis_09c39bcc83d1af20b9a9eade8a6ba276.docx
+20240902-07:55:45 - Philippe Limantour : Generate draft RAI assessment - CopilotForJob_solutiondescription.docx
+20240902-07:56:35 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - CopilotForJob_solutiondescription_draftRAI_MsInternal_431835f27b3146487b4f75b105a84b3c.docx and CopilotForJob_solutiondescription_draftRAI_431835f27b3146487b4f75b105a84b3c.docx
+20240902-07:56:40 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - CopilotForJob_solutiondescription_draftRAI_MsInternal_431835f27b3146487b4f75b105a84b3c.docx and CopilotForJob_solutiondescription_draftRAI_431835f27b3146487b4f75b105a84b3c.docx
+20240912-17:09:43 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240920-13:06:32 -  : Unauthorized access attempt
+20240920-13:39:46 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Access granted
+20240920-13:45:04 - Philippe Limantour : Analyze the solution description - Detailed Answers to Intake Call Questions.docx
+20240920-13:45:11 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - Detailed Answers to Intake Call Questions_analysis_73633372ad8246a73cda00bb43146a38.docx
+20240920-13:45:38 - Philippe Limantour : Generate draft RAI assessment - Detailed Answers to Intake Call Questions.docx
+20240920-13:46:48 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Detailed Answers to Intake Call Questions_draftRAI_MsInternal_10767033c792c1712347c0feb9051d10.docx and Detailed Answers to Intake Call Questions_draftRAI_10767033c792c1712347c0feb9051d10.docx
+20240920-13:46:53 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Detailed Answers to Intake Call Questions_draftRAI_MsInternal_10767033c792c1712347c0feb9051d10.docx and Detailed Answers to Intake Call Questions_draftRAI_10767033c792c1712347c0feb9051d10.docx
+20240920-13:48:05 - Philippe Limantour : Analyze the solution description - solution_description.docx
+20240920-13:48:08 - Philippe Limantour : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_e0e33972659bf519d0390e7cba9b9809.docx
+20240920-13:48:21 - Philippe Limantour : Generate draft RAI assessment - solution_description.docx
+20240920-13:48:43 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_ce3fdcc5c89aeef96ef19a11ff063e03.docx and solution_description_draftRAI_ce3fdcc5c89aeef96ef19a11ff063e03.docx
+20240920-13:50:01 - Philippe Limantour : Downloading the AI-generated draft RAI Impact Assessments as a zip file - solution_description_draftRAI_MsInternal_ce3fdcc5c89aeef96ef19a11ff063e03.docx and solution_description_draftRAI_ce3fdcc5c89aeef96ef19a11ff063e03.docx
+20241220-15:05:19 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:14:56 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:15:57 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:21:52 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:30:14 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:35:31 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241220-15:37:33 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241220-15:37:37 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_f48c05841965c54ab30e0e96440ab26a.docx
+20241222-10:23:34 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-11:42:25 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-12:40:23 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-12:50:20 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-12:51:14 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-12:51:16 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_ba80e5976960816b4c20040f6a4625cb.docx
+20241222-12:56:08 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-12:56:21 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-12:56:24 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_d55a27664383a7636ea352ebf68e24e3.docx
+20241222-13:00:41 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-13:00:58 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-13:01:02 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_7c4a1e33162099d7d76c21f3a5764da7.docx
+20241222-13:36:27 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-13:36:42 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-13:36:46 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_0d80dc806e7e404e501cc6c45e2d22df.docx
+20241222-13:57:15 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-13:57:28 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-13:57:32 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_e7289caea25b9843ac8ac7ae2724496a.docx
+20241222-14:11:02 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-14:11:20 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-14:11:24 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_c1f8bb668005b407effe3998f11deedb.docx
+20241222-14:35:15 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-14:35:33 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-14:35:37 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_bdc3d0a39af144ffb8c16cb4c0465cfc.docx
+20241222-14:35:50 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Changed parameter use_cache to Do not use cached answers
+20241222-14:36:02 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-14:36:11 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_78db9427af2f44fcd8900a1d59e54eef.docx
+20241222-16:42:26 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241222-16:42:37 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241222-16:42:39 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_c0c9eb78949ec346e4ffb87ad132436e.docx
+20241223-17:24:55 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241223-17:25:30 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241223-17:25:35 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_f045fd2fc7878f79c42b7c5c665d61ad.docx
+20241223-17:34:14 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241223-17:34:33 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241223-17:34:37 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_fceacdc6f853283ef89233cd36fac437.docx
+20241223-17:38:35 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241223-17:38:52 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - solution_description.docx
+20241223-17:38:56 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - solution_description_analysis_bcb8f91bf223efa20e37ef40d422da0b.docx
+20241226-10:30:17 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20241226-10:30:33 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - rai-solution_description.docx
+20241226-10:30:44 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - rai-solution_description_analysis_a105ef669aa98a09d732b98a6923b6bb.docx
+20241226-10:41:05 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - rai-solution_description.docx
+20241226-10:41:12 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - rai-solution_description_analysis_85013e319b02608da2ec66fc8cfb8511.docx
+20241226-10:41:24 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Generate draft RAI assessment - rai-solution_description.docx
+20241226-10:42:18 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - rai-solution_description_draftRAI_MsInternal_dacebacb9f6127ae160032be1ee1346d.docx and rai-solution_description_draftRAI_dacebacb9f6127ae160032be1ee1346d.docx
+20241226-10:42:26 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - rai-solution_description_draftRAI_MsInternal_dacebacb9f6127ae160032be1ee1346d.docx and rai-solution_description_draftRAI_dacebacb9f6127ae160032be1ee1346d.docx
+20241226-10:44:25 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - rai-solution_description.docx
+20241226-10:44:27 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - rai-solution_description_analysis_ad7cd8c51ce067f7d6c2a0edbb787132.docx
+20241226-11:09:21 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - podcast-solution_description.docx
+20241226-11:09:29 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - podcast-solution_description_analysis_e0cbdf169e33a5fdb33d92223e3daf63.docx
+20241226-11:15:30 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - podcast-solution_description.docx
+20241226-11:15:36 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - podcast-solution_description_analysis_51adcc5c4219ee5b7f1688c22ae46939.docx
+20241226-11:16:21 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Generate draft RAI assessment - podcast-solution_description.docx
+20241226-11:17:17 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - podcast-solution_description_draftRAI_MsInternal_812eaaf53886f00900d388d508d56302.docx and podcast-solution_description_draftRAI_812eaaf53886f00900d388d508d56302.docx
+20241226-11:17:25 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - podcast-solution_description_draftRAI_MsInternal_812eaaf53886f00900d388d508d56302.docx and podcast-solution_description_draftRAI_812eaaf53886f00900d388d508d56302.docx
+20241226-11:26:46 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - perplexica-solution_description.docx
+20241226-11:26:52 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - perplexica-solution_description_analysis_66a94207120fe80ddcdf791b69f84daa.docx
+20241226-11:32:09 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - perplexica-solution_description.docx
+20241226-11:32:16 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - perplexica-solution_description_analysis_5358a84a7a12afe93cfa7e2b35840109.docx
+20241226-11:32:27 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Generate draft RAI assessment - perplexica-solution_description.docx
+20241226-11:33:11 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - perplexica-solution_description_draftRAI_MsInternal_6b4dc52c6954f41a33a0ec1245fa5f39.docx and perplexica-solution_description_draftRAI_6b4dc52c6954f41a33a0ec1245fa5f39.docx
+20241226-11:34:11 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - perplexica-solution_description_draftRAI_MsInternal_6b4dc52c6954f41a33a0ec1245fa5f39.docx and perplexica-solution_description_draftRAI_6b4dc52c6954f41a33a0ec1245fa5f39.docx
+20241226-11:41:45 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - graphrag-solution_description.docx
+20241226-11:41:52 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - graphrag-solution_description_analysis_cd346504beb05a0b4cbb48fe408a5b7a.docx
+20241226-11:42:56 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Generate draft RAI assessment - graphrag-solution_description.docx
+20241226-11:43:32 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - graphrag-solution_description_draftRAI_MsInternal_3731f1c0142b1899d7c4fe83ac87834c.docx and graphrag-solution_description_draftRAI_3731f1c0142b1899d7c4fe83ac87834c.docx
+20241226-11:43:40 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - graphrag-solution_description_draftRAI_MsInternal_3731f1c0142b1899d7c4fe83ac87834c.docx and graphrag-solution_description_draftRAI_3731f1c0142b1899d7c4fe83ac87834c.docx
+20241226-11:48:37 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Analyze the solution description - security-solution_description.docx
+20241226-11:48:45 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated Analysis ofthe solution description - security-solution_description_analysis_76d7fa061562a33e9f667f44bb988a48.docx
+20241226-11:48:52 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Generate draft RAI assessment - security-solution_description.docx
+20241226-11:49:28 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - security-solution_description_draftRAI_MsInternal_b271b5f123bc0921b665ff62b32004df.docx and security-solution_description_draftRAI_b271b5f123bc0921b665ff62b32004df.docx
+20241226-11:49:31 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Downloading the AI-generated draft RAI Impact Assessments as a zip file - security-solution_description_draftRAI_MsInternal_b271b5f123bc0921b665ff62b32004df.docx and security-solution_description_draftRAI_b271b5f123bc0921b665ff62b32004df.docx
+20250106-12:23:56 - Philippe Limantour - a0b3d50d-8722-45e0-a030-a807d755d2e8 : Access granted
+20250121-16:14:43 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Access granted
+20250121-16:16:33 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Analyze the solution description - Solution Description for the Responsible AI Assessment.docx
+20250121-16:16:41 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Downloading the AI-generated Analysis ofthe solution description - Solution Description for the Responsible AI Assessment_analysis_a73205bf0744a0de722e0c2d24937ebb.docx
+20250121-16:17:25 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Generate draft RAI assessment - Solution Description for the Responsible AI Assessment.docx
+20250121-16:18:51 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Solution Description for the Responsible AI Assessment_draftRAI_MsInternal_a6f5b8148e3c2eed71cdf77e948a79cf.docx and Solution Description for the Responsible AI Assessment_draftRAI_a6f5b8148e3c2eed71cdf77e948a79cf.docx
+20250121-16:19:00 - Philippe Beraud - e77e11f3-7b0e-4ecb-a8a0-0e6ce9c71d2b : Downloading the AI-generated draft RAI Impact Assessments as a zip file - Solution Description for the Responsible AI Assessment_draftRAI_MsInternal_a6f5b8148e3c2eed71cdf77e948a79cf.docx and Solution Description for the Responsible AI Assessment_draftRAI_a6f5b8148e3c2eed71cdf77e948a79cf.docx

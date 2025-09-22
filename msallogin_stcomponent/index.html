@@ -1,0 +1,323 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSAL Flask App</title>
+    <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
+    <style type="text/css">
+      body {
+        color: white;
+      }
+  
+      h1 {
+        font-family: sans-serif;
+        font-size: 24px;
+        font-weight: normal;
+        color: white;
+      }
+  
+      h2 {
+        font-family: sans-serif;
+        font-size: 20px;
+        font-weight: normal;
+        color: white;
+      }
+
+      .login_button {
+        background-color: #0078d4;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+
+    </style>
+</head>
+<body>
+  <h1>Welcome to MSAL Authentication</h1>
+  <div id="status">
+    <p>Welcome, Please login</p>
+    <button id="login" class="login_button">Login</button>
+  </div>
+</body>
+
+<script type="text/javascript">
+  let msalInstance = null;
+  let msalConfig = null;
+
+  async function initializeMsal(config) {
+      console.log("Initializing MSAL with config:");
+      if (!config.clientId || !config.tenantId || !config.redirectUri) {
+          console.error("Missing required configuration for Azure authentication");
+          return;
+      }
+
+      let msalConfig = {
+          auth: {
+              clientId: config.clientId,
+              authority: `https://login.microsoftonline.com/${config.tenantId}`, // Removed '/v2.0'
+              redirectUri: config.redirectUri,
+          },
+          cache: {
+              cacheLocation: "localStorage",
+              storeAuthStateInCookie: false,
+          }
+      };
+
+      msalInstance = new msal.PublicClientApplication(msalConfig);
+      await msalInstance.initialize();
+  }
+
+  async function loginAndHandleResult(msalConfig) {
+      console.log("Logging in with MSAL...");
+      // Ensure MSAL is initialized
+      if (!msalInstance) {
+          await initializeMsal(msalConfig);
+      }
+      let activeAccount = msalInstance.getActiveAccount();
+
+      if (!activeAccount) {
+          const accounts = msalInstance.getAllAccounts();
+          if (accounts.length > 0) {
+              msalInstance.setActiveAccount(accounts[0]);
+              activeAccount = accounts[0];
+          } else {
+              try {
+                  const loginResponse = await msalInstance.loginPopup({
+                      scopes: ["User.Read"],
+                  });
+
+                  if (loginResponse.accessToken) {
+                      msalInstance.setActiveAccount(loginResponse.account);
+                      activeAccount = loginResponse.account;
+
+                      // Fetch user information
+                      const userInfo = await fetchUserInfo(loginResponse.accessToken);
+                      
+                      if (!userInfo || !userInfo.displayName) {
+                          console.error("Incomplete user information received.");
+                          const states = { firstLogin: true, accessToken: "Incomplete user information received", userInfo: null };
+                          notifyHost({
+                            value: states,
+                            dataType: "json",
+                          })
+                          return null;
+                      }
+
+                      // console.log("User info:", userInfo);
+                      const states = { firstLogin: true, accessToken: loginResponse.accessToken, userInfo: userInfo };
+                      notifyHost({
+                        value: states,
+                        dataType: "json",
+                      })
+
+                      return { firstLogin: true, accessToken: loginResponse.accessToken, userInfo: userInfo };
+                  } else {
+                      console.error("No access token received.");
+                      const states = { firstLogin: true, accessToken: "No acess token received", userInfo: null };
+                      notifyHost({
+                        value: states,
+                        dataType: "json",
+                      })
+                      return null;
+                  }
+              } catch (error) {
+                  if (error instanceof msal.BrowserAuthError && error.errorCode === "interaction_in_progress") {
+                      console.log("Interaction is currently in progress. Please wait.");
+                  } else {
+                      console.error("Authentication error:", error);
+                      const states = { firstLogin: true, accessToken: "Authentication error", userInfo: null };
+                      notifyHost({
+                        value: states,
+                        dataType: "json",
+                      })
+                      return null;
+                  }
+              }
+          }
+      }
+
+      if (activeAccount) {
+          console.log("User is logged in.");
+          try {
+              const accessToken = await msalInstance.acquireTokenSilent({
+                  scopes: ["User.Read"],
+                  account: activeAccount,
+              });
+              if (accessToken) {
+                  // Fetch user information
+                  const userInfo = await fetchUserInfo(accessToken.accessToken);
+
+                  if (!userInfo || !userInfo.displayName) {
+                      console.error("Incomplete user information received.");
+                      return null;
+                  }
+
+                  console.log("User info:", userInfo);
+                  const states = { firstLogin: false, accessToken: accessToken.accessToken, userInfo: userInfo };
+                  notifyHost({
+                        value: states,
+                        dataType: "json",
+                      })
+                  
+
+                  return { firstLogin: false, accessToken: accessToken.accessToken, userInfo: userInfo };
+              } else {
+                  console.error("Failed to acquire access token silently.");
+                  return null;
+              }
+          } catch (error) {
+              console.error("Failed to acquire access token silently.", error);
+              return null;
+          }
+      }
+      return null;
+  }
+
+  async function fetchUserInfo(accessToken) {
+      try {
+          const userInfoResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+              headers: {
+                  Authorization: `Bearer ${accessToken}`,
+              },
+          });
+          if (!userInfoResponse.ok) {
+              console.error("Failed to retrieve user info. HTTP Status:", userInfoResponse.status);
+              return null;
+          }
+          
+          const userInfo = await userInfoResponse.json();
+          return userInfo;
+      } catch (error) {
+          console.error("Failed to retrieve user info.", error);
+          return null;
+      }
+  }
+
+  // Handle Login Button
+  const loginButton = document.getElementById('login');
+  if (loginButton) {
+      loginButton.addEventListener('click', async () => {
+          const result = await loginAndHandleResult(msalConfig);
+          console.log('Login Result:', result);
+          if (result) {
+              // location.reload();
+              console.log('Redirecting to /');
+              // window.location.href = '/';
+          } else {
+              console.error('Login failed');
+          }
+      });
+  }
+
+  // Handle Logout Button
+  const logoutButton = document.getElementById('logout');
+  if (logoutButton) {
+      logoutButton.addEventListener('click', () => {
+          msalInstance.logout();
+          location.reload();
+      });
+  }
+
+
+
+  // ----------------------------------------------------
+  // Use these functions as is to perform required Streamlit 
+  // component lifecycle actions:
+  //
+  // 1. Signal Streamlit client that component is ready
+  // 2. Signal Streamlit client to set visible height of the component
+  //    (this is optional, in case Streamlit doesn't correctly auto-set it)
+  // 3. Pass values from component to Streamlit client
+  //
+
+  // Helper function to send type and data messages to Streamlit client
+
+  const SET_COMPONENT_VALUE = "streamlit:setComponentValue"
+  const RENDER = "streamlit:render"
+  const COMPONENT_READY = "streamlit:componentReady"
+  const SET_FRAME_HEIGHT = "streamlit:setFrameHeight"
+
+  function _sendMessage(type, data) {
+    // copy data into object
+    var outboundData = Object.assign({
+      isStreamlitMessage: true,
+      type: type,
+    }, data)
+
+    if (type == SET_COMPONENT_VALUE) {
+      // console.log("_sendMessage data: " + JSON.stringify(data))
+      // console.log("_sendMessage outboundData: " + JSON.stringify(outboundData))
+    }
+
+    window.parent.postMessage(outboundData, "*")
+  }
+
+  function initialize(pipeline) {
+
+    // Hook Streamlit's message events into a simple dispatcher of pipeline handlers
+    window.addEventListener("message", (event) => {
+      if (event.data.type == RENDER) {
+        // The event.data.args dict holds any JSON-serializable value
+        // sent from the Streamlit client. It is already deserialized.
+        pipeline.forEach(handler => {
+          handler(event.data.args)
+        })
+      }
+    })
+
+    _sendMessage(COMPONENT_READY, { apiVersion: 1 });
+
+    // Component should be mounted by Streamlit in an iframe, so try to autoset the iframe height.
+    window.addEventListener("load", () => {
+      window.setTimeout(function () {
+        setFrameHeight(document.documentElement.clientHeight)
+      }, 0)
+    })
+
+    // Optionally, if auto-height computation fails, you can manually set it
+    // (uncomment below)
+    //setFrameHeight(200)
+  }
+
+  function setFrameHeight(height) {
+    _sendMessage(SET_FRAME_HEIGHT, { height: height })
+  }
+
+  // The `data` argument can be any JSON-serializable value.
+  function notifyHost(data) {
+    _sendMessage(SET_COMPONENT_VALUE, data)
+  }
+
+  // ----------------------------------------------------
+  // Here you can customize a pipeline of handlers for 
+  // inbound properties from the Streamlit client app
+
+  // Set initial value sent from Streamlit!
+  function initializeProps_Handler(props) {
+    initializeMsal(props)
+  }
+  // Access values sent from Streamlit!
+  function dataUpdate_Handler(props) {
+    console.log("Received from Streamlit: " + JSON.stringify(props))
+  }
+  // Simply log received data dictionary
+  function log_Handler(props) {
+    console.log("Received from Streamlit: " + JSON.stringify(props))
+  }
+
+  let pipeline = [initializeProps_Handler, dataUpdate_Handler, log_Handler]
+
+  // ----------------------------------------------------
+  // Finally, initialize component passing in pipeline
+
+  initialize(pipeline)
+
+  </script>
+</html>

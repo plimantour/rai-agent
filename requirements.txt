@@ -1,0 +1,14 @@
+openai
+pdfminer-six
+python-docx
+docx2txt
+python-dotenv
+azure-identity
+azure-keyvault-secrets
+streamlit
+streamlit_ext
+streamlit_javascript
+termcolor
+llmlingua
+azure-storage-blob
+zipfile36

@@ -1,0 +1,4 @@
+20240402131947 - Philippe Limantour - philippe.limantour@microsoft.com - plimantour@microsoft.com : Analyze the solution description - solution_description.docx20240527180745 -  : Analyze the solution description - rai_solution_description.docx
+20240527181109 -  : Analyze the solution description - rai_solution_description.docx
+20240527181836 -  : Analyze the solution description - rai_solution_description.docx
+20240527181908 -  : Generate draft RAI assessment - rai_solution_description.docx
