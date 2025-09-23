@@ -75,7 +75,13 @@ model_pricing_euros = {
     "NbTokens": 1000,
     "Input": 0.0074088,
     "Output": 0.0222264
-}
+  },
+  "gpt-5": {
+    "Context": 128000,
+    "NbTokens": 1000,
+    "Input": 0.00125,
+    "Output": 0.01
+  }
 }
 
 # Function to calculate the cost of a completion based on the number of tokens used in the prompt

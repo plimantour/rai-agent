@@ -11,4 +11,3 @@ streamlit_javascript
 termcolor
 llmlingua
 azure-storage-blob
-zipfile36

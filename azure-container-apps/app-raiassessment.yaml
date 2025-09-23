@@ -42,14 +42,34 @@ properties:
   delegatedIdentities: []
   environmentId: /subscriptions/7746d4f8-d4a6-4d91-9674-9e1dcd8b5c1c/resourceGroups/cto-containers-raiassessment-rg/providers/Microsoft.App/managedEnvironments/app-raiassessment-env
   eventStreamEndpoint: https://swedencentral.azurecontainerapps.dev/subscriptions/7746d4f8-d4a6-4d91-9674-9e1dcd8b5c1c/resourceGroups/cto-containers-raiassessment-rg/containerApps/app-raiassessment/eventstream
-  latestReadyRevisionName: app-raiassessment--9ottdas
-  latestRevisionFqdn: app-raiassessment--kgomzoz.happypebble-9d7c570e.swedencentral.azurecontainerapps.io
-  latestRevisionName: app-raiassessment--kgomzoz
+  latestReadyRevisionName: app-raiassessment--0000003
+  latestRevisionFqdn: app-raiassessment--0000003.happypebble-9d7c570e.swedencentral.azurecontainerapps.io
+  latestRevisionName: app-raiassessment--0000003
   managedEnvironmentId: /subscriptions/7746d4f8-d4a6-4d91-9674-9e1dcd8b5c1c/resourceGroups/cto-containers-raiassessment-rg/providers/Microsoft.App/managedEnvironments/app-raiassessment-env
   outboundIpAddresses:
   - 20.240.28.167
   - 20.240.28.184
+  - 9.223.20.105
+  - 135.116.6.186
+  - 9.223.21.30
+  - 9.223.218.210
+  - 135.116.14.134
+  - 9.223.143.243
+  - 9.223.9.149
+  - 74.241.137.85
+  - 74.241.139.161
+  - 74.241.138.64
   - 20.240.28.187
+  - 74.241.136.237
+  - 9.223.21.119
+  - 9.223.10.153
+  - 9.223.225.145
+  - 9.223.220.233
+  - 74.241.136.44
+  - 9.223.87.134
+  - 74.241.139.29
+  - 9.223.20.250
+  - 9.223.20.145
   - 20.240.29.51
   - 74.241.193.90
   - 74.241.192.157
@@ -59,7 +79,27 @@ properties:
   - 74.241.193.34
   - 20.240.38.142
   - 20.240.38.235
+  - 9.223.237.26
+  - 9.223.246.165
+  - 74.241.209.91
+  - 74.241.211.241
+  - 9.223.245.238
+  - 135.116.14.86
+  - 9.223.173.128
+  - 9.223.237.22
+  - 4.225.86.27
+  - 9.223.75.69
   - 20.240.37.255
+  - 9.223.245.208
+  - 9.223.237.31
+  - 9.223.45.114
+  - 9.223.24.231
+  - 74.241.210.170
+  - 9.223.246.185
+  - 9.223.16.144
+  - 135.116.37.178
+  - 9.223.247.36
+  - 9.223.18.163
   - 20.240.37.231
   - 74.241.204.139
   - 74.241.204.246
@@ -67,66 +107,6 @@ properties:
   - 74.241.200.59
   - 74.241.205.78
   - 74.241.203.192
-  - 4.225.49.6
-  - 4.225.48.19
-  - 74.241.138.119
-  - 74.241.138.198
-  - 74.241.138.97
-  - 74.241.138.48
-  - 74.241.137.233
-  - 74.241.138.155
-  - 74.241.138.255
-  - 74.241.136.181
-  - 74.241.137.139
-  - 74.241.138.181
-  - 4.225.48.122
-  - 4.223.115.126
-  - 4.223.115.111
-  - 4.223.115.189
-  - 4.223.115.145
-  - 4.223.115.167
-  - 4.223.115.181
-  - 4.223.115.174
-  - 4.223.115.158
-  - 4.223.115.150
-  - 4.223.115.128
-  - 4.225.49.31
-  - 74.241.139.251
-  - 74.241.139.246
-  - 74.241.138.226
-  - 74.241.138.239
-  - 74.241.139.178
-  - 74.241.138.252
-  - 9.223.60.228
-  - 9.223.18.96
-  - 9.223.18.64
-  - 9.223.17.89
-  - 9.223.17.226
-  - 9.223.59.128
-  - 9.223.19.80
-  - 9.223.20.36
-  - 9.223.18.25
-  - 9.223.18.28
-  - 9.223.20.240
-  - 9.223.20.23
-  - 9.223.19.88
-  - 9.223.20.9
-  - 9.223.58.82
-  - 9.223.18.90
-  - 9.223.18.78
-  - 9.223.18.62
-  - 9.223.18.159
-  - 9.223.18.253
-  - 74.241.176.29
-  - 74.241.176.35
-  - 74.241.176.62
-  - 74.241.176.20
-  - 74.241.203.127
-  - 74.241.203.7
-  - 74.241.202.218
-  - 74.241.202.236
-  - 74.241.203.51
-  - 74.241.203.109
   - 9.223.105.32
   patchingMode: Automatic
   provisioningState: Succeeded
@@ -135,7 +115,7 @@ properties:
     containers:
     - env:
       - name: DEPLOY_TIME_IN_SECONDS_SINCE_EPOCH
-        value: '1740592770'
+        value: '1758626875'
       image: ctodockerregistry.azurecr.io/rai:latest
       imageType: ContainerImage
       name: app-raiassessment
@@ -160,7 +140,7 @@ systemData:
   createdAt: '2025-02-26T17:59:41.4751109'
   createdBy: philippe.limantour@microsoft.com
   createdByType: User
-  lastModifiedAt: '2025-02-26T18:00:20.6443518'
+  lastModifiedAt: '2025-09-23T11:28:44.6245566'
   lastModifiedBy: philippe.limantour@microsoft.com
   lastModifiedByType: User
 type: Microsoft.App/containerApps

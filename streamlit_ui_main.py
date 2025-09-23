@@ -242,12 +242,12 @@ if __name__ == '__main__':
 
                 st.markdown(f"<br/><small><i>Developed by Philippe Limantour - March 2024<br>Version {build_version}</i></small>", unsafe_allow_html=True)
 
-                if st.session_state.user_name in ["Philippe Limantour", "Philippe Beraud"]:
+                if st.session_state.user_name in ["Philippe Limantour", "Philippe Limantour (NTO/NSO)", "Philippe Beraud"]:
                     st.markdown(f'<b><i><span style="color:orange;"><small>Admin access - version {build_version}</small></span></i></b>', unsafe_allow_html=True)
 
                     st.sidebar.download_button("Download Logs", data=read_logs_blob_content(), file_name="rai_logs.txt" , key="download_logs", mime="application/txt")
 
-                if st.session_state.user_name in ["Philippe Limantour"]:
+                if st.session_state.user_name in ["Philippe Limantour", "Philippe Limantour (NTO/NSO)"]:
                     if st.button("Clear cache"):
                         try:
                             os.remove('./cache/completions_cache.pkl')
