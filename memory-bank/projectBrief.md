@@ -9,7 +9,10 @@ Core Differentiators:
 - Optional prompt compression to reduce cost
 - Integrated Azure security primitives (Key Vault, Managed Identity)
 - Dual output formats from one generation run
+- Admin-selectable model & reasoning effort (cost / capability flexibility)
+- Adaptive reasoning parameter handling (progressive fallback)
+- Cost accounting includes hidden reasoning tokens for transparency
 
 Primary Stakeholders: AI solution architects, compliance / RAI reviewers, engineering teams preparing assessment packages.
 
-Key Risks to Mitigate Next: resilience (error handling), structured logging, test coverage, multi-user scaling & cache integrity.
+Key Risks to Mitigate Next: resilience (error handling), structured logging, test coverage, multi-user scaling & cache integrity, pricing drift, reasoning cost transparency.

@@ -13,30 +13,43 @@ Initialize structured project knowledge for the RAI Assessment automation tool. 
 
 ## Recent Changes
 
-- Added initial memory-bank documentation (this file plus product, progress, system patterns, tech context, brief)
-- Captured architectural decisions (pipeline design, caching strategy, Azure resource usage)
-- Normalized terminology ("Intended Uses", "Stakeholders", "Harms Assessment" phases)
+- Migrated Azure OpenAI initialization to the official `AzureOpenAI` client so Responses API calls hit deployment-scoped endpoints (fixes 404 fallbacks and restores reasoning summaries in the UI).
+- Initial memory-bank documentation established (core architecture & patterns)
+- Architectural decisions captured (pipeline design, caching strategy, Azure resource usage)
+- Terminology normalized ("Intended Uses", "Stakeholders", "Harms Assessment")
+- Admin-only dynamic model selection UI with per‑model pricing preview
+- Reasoning model support (gpt‑5, o*-series) + reasoning effort selector (minimal/low/medium/high)
+- Adaptive parameter builder for reasoning models (auto strips unsupported params; progressive fallback; removed hard `max_completion_tokens` cap to permit long outputs)
+- Pricing metadata expanded (cached input + reasoning token cost integration)
+- Cost calculator updated to include hidden reasoning_tokens in output pricing
+ - Dynamic log level control (admin sidebar) + suppression of noisy external loggers
+ - Raw response & empty-answer diagnostics for reasoning models (DEBUG reveals truncated choice structure)
+ - Single-click timestamped system logs download (sidebar) alongside access log export
+ - Responses API integration for sanctioned reasoning summaries (summary mode + verbosity env controlled)
 
 ## Next Steps
 
 Short term (high leverage):
-1. Add automated tests for prompt processors (JSON parsing & token replacement)
-2. Introduce structured logging (correl IDs, levels) instead of raw blob appends
-3. Harden security: input sanitization, size limits, user role enforcement
-4. Abstract model provider (Azure OpenAI vs Mistral) behind a strategy class
-5. Add observability metrics (token counts, per-step latency, cache hit ratio)
+1. Automated tests for prompt processors (JSON parsing & token replacement)
+2. Structured logging (correlation IDs, levels) vs unstructured blob appends
+3. Security hardening: input sanitization, size limits, role enforcement
+4. Provider abstraction (Azure OpenAI vs future providers)
+5. Observability metrics (prompt vs completion vs reasoning tokens, per-step latency, cache hit ratio)
+6. Persist per-step usage snapshot (audit & cost analytics)
+7. Deeper recursive reasoning extraction + segmentation (capture chain-of-thought parts without leaking sensitive reasoning) 
+8. Automated regression test to ensure Azure OpenAI initialization keeps Responses API routing healthy (guard against future SDK/config drift)
 
 Medium term:
-6. Support multi-language assessments (currently English hard-coded in most flows)
-7. Move pricing + model metadata to a config service / JSON
-8. Replace pickle cache with Azure Cache (Redis) for horizontal scaling
-9. Implement streaming partial updates to UI (progress already structured)
-10. Add retry / backoff & circuit breaker around LLM calls
+7. Multi-language assessments (English default)
+8. Externalize pricing + model metadata (JSON/service) & auto-refresh
+9. Redis cache for horizontal scaling
+10. Streaming partial updates (incremental section rendering)
+11. Circuit breaker + structured retry policies (beyond reasoning fallback)
 
 Longer term:
-11. Role-based workflow (Draft -> Review -> Approved) with audit trail
-12. Versioned prompt sets & A/B experimentation harness
-13. Automatic evaluation heuristics for output quality & red-teaming
+12. Role-based workflow (Draft -> Review -> Approved) with audit trail
+13. Versioned prompt sets & A/B experimentation harness
+14. Quality, safety & fairness evaluation heuristics + red-teaming harness
 
 ## Active Decisions & Considerations
 
@@ -50,13 +63,19 @@ Decision Log (initial snapshot):
 - Pricing computed client-side from static table: risk of drift vs. provider billing — requires periodic validation.
 
 Open Questions:
-- Should we persist intermediate JSON sections for re-run minimization? (Currently only final DOCX gets persisted.)
-- How to handle partial failures mid-pipeline (presently aborts silently in some except blocks)?
-- Introduce schema validation for each JSON response? (Would reduce silent structural drift.)
+- Persist intermediate JSON to skip re-computation? (Currently only final DOCX persisted.)
+- Best way to surface reasoning vs visible token ratio in UI? (Cost transparency)
+- Optional env-controlled output length guardrail? (Currently intentionally uncapped)
+- Schema validation for each JSON response? (Reduce silent structural drift)
+- Partial failure recovery strategy (resume at failed step?)
+ - How to present reasoning summaries vs deeper extraction without exposing sensitive chain-of-thought (balance transparency vs safety)?
 
 Risks / Watch Items:
-- Silent exception catching can hide malformed model outputs.
-- Absence of rate limiting & exponential backoff may cause throttling under concurrent users.
-- Inconsistent naming (e.g., typos from model outputs: 'inteduse') requires stronger normalization layer.
+- Silent exception catching can hide malformed outputs
+- No global backoff / rate limiting – throttling risk under concurrency
+- Inconsistent naming (e.g., 'inteduse') needs normalization layer
+- Reasoning effort 'high' may inflate cost/latency unpredictably without per-tier ceilings
+- Static pricing requires manual updates; drift risks under/over cost reporting
+ - Potential increased latency from future deeper extraction / retry logic (needs guardrails & telemetry)
 
 

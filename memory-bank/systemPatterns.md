@@ -10,7 +10,7 @@ High-Level Layers:
 5. Presentation: Streamlit reactive components (progress, download, parameter toggles)
 
 Data Flow (UI path):
-Upload DOCX → Extract raw text → Initialize models (credential + endpoints) → Multi-step LLM calls (JSON) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP download → Log user actions.
+Upload DOCX → Extract raw text → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Log user actions & usage.
 
 ## Key Technical Decisions
 
@@ -26,7 +26,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 - Pipeline Pattern: Ordered list of (name, prompt, temperature, mode, processor) driving uniform execution.
 - Adapter Pattern (implicit): Abstraction over Azure OpenAI vs Mistral via conditional branches (candidate for explicit interface).
 - Caching Pattern: MD5 signature –> serialized response (model, lang, pricing, content) enabling reuse & cost display.
-- Template Method (partial): Shared `get_azure_openai_completion` handles compression, caching, pricing, fallback.
+- Template Method (partial): `get_azure_openai_completion` + adaptive reasoning helper (param fallback, unsupported param stripping, cost integration).
 - Token Replacement Strategy: Two passes (collect vs. incremental update if `update_steps=True`).
 - Defensive Parsing: `get_json_from_answer` attempts normalization & reshaping when model output deviates.
 
@@ -51,8 +51,10 @@ Scalability Considerations:
 Resilience Gaps:
 - Limited retry/backoff; broad exception catches reduce observability.
 - No circuit breaker around LLM provider errors.
+- Adaptive reasoning fallback uses broad exception capture (risk: masks credential/quota errors) – requires refinement (simplified after removing forced output cap).
 
 Extensibility Hooks:
 - Adding a new section = append to `steps` list with processor + prompt constant.
-- Switching model provider: encapsulate current conditional branches behind interface.
+- Switching model provider: encapsulate conditional branches behind interface.
+- Adding new reasoning tiers: extend effort → (optional future output cap) + pricing metadata.
 

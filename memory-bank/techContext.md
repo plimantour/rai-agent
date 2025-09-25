@@ -4,7 +4,8 @@
 
 - Python 3.11+
 - Streamlit (UI shell)
-- Azure OpenAI (chat completions) & optional Mistral endpoint (fallback / alternative)
+- Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint
+ - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
 - Azure Identity (DefaultAzureCredential) for keyless auth
 - Azure Key Vault (secret & endpoint retrieval)
 - Azure Blob Storage (logs, user allow‑list text, misc data)
@@ -39,7 +40,7 @@ Key Vault Secret Names (observed):
 - Local pickle cache prevents transparent horizontal scaling (stateful node) — race conditions possible.
 - DOCX mutation cost grows linearly with paragraph/table count; no streaming writing optimization.
 - JSON contract with LLM is implicit; absence of schema validation risks silent degradation.
-- Pricing table static; must be manually updated to reflect billing changes.
+- Pricing table static; manually updated (now includes reasoning & cached input pricing; risk of drift).
 - Authentication: UI relies on MSAL component + allow‑list; lacking granular role model.
 - No formal rate limiting or concurrency guard around LLM calls (provider throttling risk).
 - Logging unstructured → limited queryability & alerting.
@@ -50,4 +51,10 @@ Potential Enhancements:
 - Adopt structured logging (OpenTelemetry) + central ingestion
 - Add async / concurrency for independent steps (after dependency graph explicit encoding)
 - Provide configuration manifest (YAML) for pipeline + pricing instead of hard-coded dicts
+- Surface reasoning vs visible token breakdown (UI & logs)
+- Optional env var (`RAI_MAX_COMPLETION_TOKENS`) to reintroduce a soft output cap if needed
+- Structured usage export (JSONL) for cost analytics & governance
+ - Deeper recursive reasoning extraction (structured segments + safe redaction)
+ - Automatic retry logic for empty reasoning responses (single bounded attempt)
+ - Combine access + system logs into unified on-demand archive with metadata manifest
 

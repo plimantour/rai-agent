@@ -5,12 +5,12 @@
 import os
 import pickle
 import hashlib
-from termcolor import colored
 
-try:
-    from termcolor import colored
-except ImportError:
-    def colored(x, *args, **kwargs):
+# termcolor optional (test/lean env safety). Only attempt import once.
+try:  # pragma: no cover - trivial import guard
+    from termcolor import colored  # type: ignore
+except ImportError:  # Fallback: silent no-color
+    def colored(x, *args, **kwargs):  # type: ignore
         return x
 
 def create_cache_folder_if_not_exists():

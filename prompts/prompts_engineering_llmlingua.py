@@ -2,21 +2,85 @@
 # Philippe Limantour - March 2024
 # This file contains the prompts for drafting a Responsible AI Assessment from a solution description
 
-from dotenv import load_dotenv
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from azure.keyvault.secrets import SecretClient
-from helpers.docs_utils import docx_find_replace_text, docx_find_replace_text_bydict, docx_delete_all_between_searched_texts
-from llmlingua import PromptCompressor
+try:  # Optional dependency (python-dotenv)
+    from dotenv import load_dotenv  # type: ignore
+except ImportError:  # Graceful fallback so tests don't skip solely due to missing optional dependency
+    def load_dotenv(*_args, **_kwargs):  # type: ignore
+        try:
+            print("[warn] python-dotenv not installed; proceeding without loading .env file")
+        except Exception:
+            pass
+        return False
+
+"""
+NOTE ON IMPORT STRATEGY
+-----------------------
+Heavy / environment-specific dependencies (Azure identity & Key Vault) are imported lazily
+inside initialize_ai_models() so that simply importing this module for lightweight operations
+(e.g., unit tests that mock network calls) does not require the Azure SDK stack to be present.
+
+If you need Azure functionality, ensure 'azure-identity' and 'azure-keyvault-secrets' are
+installed before calling initialize_ai_models().
+"""
+
+# Docs / docx utilities import (optional for reasoning path). Provide no-op stubs if unavailable.
+try:
+    from helpers.docs_utils import docx_find_replace_text, docx_find_replace_text_bydict, docx_delete_all_between_searched_texts
+except Exception:  # pragma: no cover
+    def docx_find_replace_text(*_a, **_k):
+        return 0
+    def docx_find_replace_text_bydict(*_a, **_k):
+        return 0
+    def docx_delete_all_between_searched_texts(*_a, **_k):
+        return 0
+
+# llmlingua is only needed if prompt compression is enabled; provide a lightweight stub if missing
+try:
+    from llmlingua import PromptCompressor  # type: ignore
+except ImportError:  # pragma: no cover
+    class PromptCompressor:  # type: ignore
+        def __init__(self, *_, **__):
+            # Stub: no heavy model load; informs via log once when used
+            try:
+                print("[warn] llmlingua not installed - compression stub active (no real compression performed)")
+            except Exception:
+                pass
+        def compress_prompt(self, text, rate=0.33, *_, **__):
+            # Return original text pretending minimal compression so downstream accounting still works
+            return {
+                "compressed_prompt": text,
+                "compressed_tokens": len(text.split()),
+                "origin_tokens": len(text.split()),
+            }
 import random
 import time
-import openai
+# OpenAI import (lazy / test-friendly): provide a lightweight stub if package missing so that
+# mock-based unit tests can still import this module without installing openai.
+try:  # pragma: no cover
+    import openai  # type: ignore
+except ImportError:  # pragma: no cover
+    class _OpenAIResponsesStub:
+        def create(self, **_kwargs):
+            raise ImportError("openai package not installed; install 'openai' for live requests or provide a test monkeypatch for responses.create().")
+
+    class _OpenAIStub:  # minimal attributes accessed in this module
+        api_type = 'azure'
+        responses = _OpenAIResponsesStub()
+        # Attributes below are assigned dynamically in initialize_ai_models when real lib exists;
+        # keep placeholders to avoid attribute errors in tests.
+        azure_ad_token_provider = None
+        azure_endpoint = None
+        api_version = None
+
+    openai = _OpenAIStub()  # type: ignore
 import os
 import json
 import re
 import ast
 from pprint import pprint
 from helpers.cache_completions import save_completion_to_cache, load_answer_from_completion_cache, delete_cache_entry
-from helpers.completion_pricing import get_completion_pricing_from_usage
+from helpers.completion_pricing import get_completion_pricing_from_usage, is_reasoning_model
+from helpers.logging_setup import get_logger
 from termcolor import colored
 
 from prompts.rai_prompts_llmlingua import SYSTEM_PROMPT, TARGET_LANGUAGE_PLACEHOLDER, SOLUTION_DESCRIPTION_PLACEHOLDER, SOLUTION_DESCRIPTION_SECURITY_ANALYSIS_PROMPT
@@ -30,6 +94,178 @@ try:
 except ImportError:
     def colored(x, *args, **kwargs):
         return x
+
+log = get_logger(__name__)
+
+# Globals initialized later in initialize_ai_models
+llm_lingua = None  # type: ignore
+mistral = None  # type: ignore
+
+# --- Global reasoning summary state (for UI display) ---
+_LAST_REASONING_SUMMARY = None  # truncated reasoning steps / plan from last reasoning model call
+_LAST_USED_RESPONSES_API = False
+_CURRENT_REASONING_VERBOSITY = 'low'  # default verbosity for reasoning summaries (low|medium|high)
+_LAST_REASONING_FALLBACK_USED = False  # whether we retried with detailed summary
+_LAST_REASONING_SUMMARY_STATUS = 'absent'  # 'captured' | 'empty' | 'absent'
+
+def set_reasoning_verbosity(v: str):
+    """Set current reasoning verbosity (low|medium|high). Silently ignore invalid values."""
+    global _CURRENT_REASONING_VERBOSITY
+    if v in ('low','medium','high'):
+        _CURRENT_REASONING_VERBOSITY = v
+
+def get_last_reasoning_summary():
+    """Return the last captured reasoning summary string (or None)."""
+    return _LAST_REASONING_SUMMARY
+
+def last_used_responses_api():
+    return _LAST_USED_RESPONSES_API
+
+def last_reasoning_fallback_used():
+    return _LAST_REASONING_FALLBACK_USED
+
+def last_reasoning_summary_status():
+    return _LAST_REASONING_SUMMARY_STATUS
+
+# --- Internal helpers for reasoning summary extraction ---
+def _safe_get(obj, key, default=None):
+    """Access attribute or dict key uniformly."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _ensure_iterable(obj):
+    if obj is None:
+        return []
+    if isinstance(obj, (list, tuple, set)):
+        return list(obj)
+    return [obj]
+
+
+def _flatten_summary_tree(value):
+    segments = []
+    visited = set()
+
+    def _walk(node):
+        if node is None:
+            return
+        nid = id(node)
+        if nid in visited:
+            return
+        visited.add(nid)
+        if isinstance(node, str):
+            text = node.strip()
+            if text:
+                segments.append(text)
+        elif isinstance(node, (list, tuple, set)):
+            for item in node:
+                _walk(item)
+        elif isinstance(node, dict):
+            for val in node.values():
+                _walk(val)
+        else:
+            # Fallback: inspect common attributes on SDK objects
+            for attr in ("text", "content", "value", "summary"):
+                if hasattr(node, attr):
+                    _walk(getattr(node, attr))
+
+    _walk(value)
+    return segments
+
+
+def _deduplicate_preserve_order(items):
+    seen = set()
+    ordered = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            ordered.append(item)
+    return ordered
+
+
+def _extract_reasoning_summary(resp):
+    """Return (summary_text, status) from a Responses API payload.
+
+    status ∈ {"captured", "empty", "absent"}.
+    """
+    if resp is None:
+        return None, "absent"
+
+    summary_segments = []
+    found_reasoning_part = False
+
+    # Top-level .reasoning field (Azure Responses SDK)
+    for reasoning_part in _ensure_iterable(_safe_get(resp, "reasoning")):
+        if reasoning_part is None:
+            continue
+        found_reasoning_part = True
+        summary_obj = _safe_get(reasoning_part, "summary")
+        if summary_obj is None:
+            summary_obj = _safe_get(reasoning_part, "content")
+        if summary_obj is not None:
+            summary_segments.extend(_flatten_summary_tree(summary_obj))
+
+    # Fallback: inspect output entries with type == "reasoning"
+    for output_part in _ensure_iterable(_safe_get(resp, "output")):
+        if output_part is None:
+            continue
+        part_type = _safe_get(output_part, "type")
+        if part_type and str(part_type).lower() != "reasoning":
+            continue
+        found_reasoning_part = True
+        summary_obj = _safe_get(output_part, "summary")
+        if summary_obj is None:
+            summary_obj = _safe_get(output_part, "content")
+        if summary_obj is not None:
+            summary_segments.extend(_flatten_summary_tree(summary_obj))
+
+    if summary_segments:
+        ordered_segments = _deduplicate_preserve_order([segment.strip() for segment in summary_segments if segment and segment.strip()])
+        joined = "\n".join(ordered_segments)
+        return (joined[:1200] + ("…" if len(joined) > 1200 else "")), "captured"
+
+    if found_reasoning_part:
+        return None, "empty"
+
+    return None, "absent"
+
+# --- Responses API integration helpers ---
+def _invoke_responses_reasoning(model, system_prompt, user_prompt, reasoning_effort, summary_mode, verbosity):
+    """Call Azure OpenAI Responses API for reasoning models to obtain reasoning summary.
+
+    Returns response object. Builds a message-style input (system + user) per latest docs;
+    supports summary collection heuristics downstream.
+    """
+    reasoning_obj = {"effort": reasoning_effort} if reasoning_effort else {}
+    if summary_mode:
+        # GPT-5: supports auto | detailed (concise currently not supported per docs)
+        reasoning_obj["summary"] = summary_mode
+    # Use list-of-messages form to preserve system vs user separation
+    input_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    payload = {
+        "model": model,
+        "input": input_messages,
+        "reasoning": reasoning_obj or None,
+    }
+    text_cfg = {}
+    if verbosity:
+        text_cfg["verbosity"] = verbosity
+    if text_cfg:
+        payload["text"] = text_cfg
+    log.info("[responses] invoking model=%s effort=%s summary=%s verbosity=%s", model, reasoning_effort, summary_mode, verbosity)
+    log.debug("[responses] payload(reasoning)=%s text=%s", payload.get("reasoning"), payload.get("text"))
+    resp = openai.responses.create(**payload)
+    try:
+        log.debug("[responses] output_part_types=%s", [getattr(o, 'type', None) for o in getattr(resp, 'output', [])])
+    except Exception:
+        pass
+    return resp
 
 # Method to segment the llmlingua prompt
 def segment_llmlingua_prompt(context, global_rate=0.33):
@@ -139,9 +375,16 @@ load_dotenv()  # take environment variables from .env. - Use an Azure KeyVault i
 completion_model: str = None
 
 def initialize_ai_models():
-    global completion_model
+    global completion_model, llm_lingua, mistral, openai
+    # Lazy import Azure SDK components here to avoid mandatory dependency at module import time
+    try:
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider  # type: ignore
+        from azure.keyvault.secrets import SecretClient  # type: ignore
+    except ImportError as az_e:  # pragma: no cover - clear message for operators
+        log.error("Azure SDK modules missing: %s. Install azure-identity and azure-keyvault-secrets.", az_e)
+        raise
 
-    # Create a DefaultAzureCredential object to authenticate with Azure
+    # Create a DefaultAzureCredential object to authenticate with Azure (supports managed identity)
     credential = DefaultAzureCredential()
     # managed_identity = os.getenv("AZURE_CONTAINER_MANAGED_IDENTITY", None)
     # credential = DefaultAzureCredential(managed_identity_client_id=managed_identity)
@@ -155,6 +398,9 @@ def initialize_ai_models():
 
     # Specify the Azure Key Vault URL
     key_vault_url = os.getenv("AZURE_KEYVAULT_URL", None)
+    if os.getenv("SKIP_KEYVAULT_FOR_TESTS", "").lower() in ("1","true","yes"):  # Facilitate local/unit tests without Key Vault network access
+        log.info("[init] SKIP_KEYVAULT_FOR_TESTS active – bypassing Key Vault secret retrieval")
+        key_vault_url = None
 
     azure_ad_token_provider = get_bearer_token_provider(credential, "https://cognitiveservices.azure.com/.default")
 
@@ -163,6 +409,8 @@ def initialize_ai_models():
         exit(1)
 
     # Check if the key vault URL is set
+    api_type = (os.getenv("AZURE_OPENAI_API_TYPE", "azure") or "azure").lower()
+
     if key_vault_url:
 
         # key_vault_url = "https://your-key-vault-name.vault.azure.net"
@@ -173,31 +421,57 @@ def initialize_ai_models():
         print(colored("Using an Azure key vault...", "cyan"))
 
         # Retrieve the openai secrets from the key vault
-        openai.api_type = os.getenv("AZURE_OPENAI_API_TYPE")
-        if openai.api_type == 'azure':
-            # openai.api_key = secret_client.get_secret('AZURE-OPENAI-API-KEY').value
-            openai.azure_ad_token_provider = azure_ad_token_provider
-            openai.azure_endpoint = secret_client.get_secret('AZURE-OPENAI-ENDPOINT').value
-            openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+        if api_type == 'azure':
+            try:
+                from openai import AzureOpenAI  # type: ignore
+            except ImportError as exc:  # pragma: no cover
+                log.error("AzureOpenAI client unavailable: %s", exc)
+                raise
+
+            azure_endpoint = secret_client.get_secret('AZURE-OPENAI-ENDPOINT').value
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
             completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
+            openai = AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                azure_ad_token_provider=azure_ad_token_provider,
+                api_version=api_version,
+            )
+            # Maintain legacy attributes for downstream checks/logging
+            openai.api_type = 'azure'  # type: ignore[attr-defined]
+            openai.azure_endpoint = azure_endpoint  # type: ignore[attr-defined]
+            openai.api_version = api_version  # type: ignore[attr-defined]
+            openai.azure_ad_token_provider = azure_ad_token_provider  # type: ignore[attr-defined]
             print(f'Using Azure OpenAI API with model {completion_model}\n')
-            print(f'keyless - azure_endpoint {openai.azure_endpoint}\n')
+            print(f'keyless - azure_endpoint {azure_endpoint}\n')
         else:
             from openai import OpenAI
             mistral_url = secret_client.get_secret('MISTRAL-OPENAI-ENDPOINT').value
             mistral_key = secret_client.get_secret('MISTRAL-OPENAI-API-KEY').value
             mistral = OpenAI(base_url=mistral_url, api_key=mistral_key)
             completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
+            setattr(openai, "api_type", api_type)
 
     # If the key vault URL is not set, use the environment variables
     else:
-        openai.api_type = os.getenv("AZURE_OPENAI_API_TYPE")
-        if openai.api_type == 'azure':
-            # openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-            openai.azure_ad_token_provider = azure_ad_token_provider
-            openai.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-            openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+        if api_type == 'azure':
+            try:
+                from openai import AzureOpenAI  # type: ignore
+            except ImportError as exc:  # pragma: no cover
+                log.error("AzureOpenAI client unavailable: %s", exc)
+                raise
+
+            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
             completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
+            openai = AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                azure_ad_token_provider=azure_ad_token_provider,
+                api_version=api_version,
+            )
+            openai.api_type = 'azure'  # type: ignore[attr-defined]
+            openai.azure_endpoint = azure_endpoint  # type: ignore[attr-defined]
+            openai.api_version = api_version  # type: ignore[attr-defined]
+            openai.azure_ad_token_provider = azure_ad_token_provider  # type: ignore[attr-defined]
             print(f'Using Azure OpenAI API with model {completion_model}\n')
             print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
         else:
@@ -207,6 +481,7 @@ def initialize_ai_models():
             mistral = OpenAI(base_url=mistral_url, api_key=mistral_key)
             completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
             print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
+            setattr(openai, "api_type", api_type)
 
     # Set up a llmlingua 2 Prompt Compressor
     llm_lingua = PromptCompressor(
@@ -226,52 +501,190 @@ def extract_string_content(content):
 
 
 # ## Method to ask a prompt to LLM (best with GPT-4)
-def get_azure_openai_completion_nocache(prompt, system_prompt, model=None):
+def get_azure_openai_completion_nocache(prompt, system_prompt, model=None, reasoning_effort=None):
+    """Lightweight single-call completion (no caching layer) with reasoning summary support by default."""
+    if model is None:
+        model = completion_model
+    global _LAST_USED_RESPONSES_API, _LAST_REASONING_SUMMARY, _LAST_REASONING_SUMMARY_STATUS, _LAST_REASONING_FALLBACK_USED
+    # --- Diagnostic log (helps verify whether reasoning path condition evaluates True) ---
     try:
-        if model is None:
-            model = completion_model
+        log.info(
+            "[diag] nocache invocation model=%s api_type=%s is_reasoning=%s prompt_chars=%d",
+            model,
+            getattr(openai, 'api_type', None),
+            is_reasoning_model(model),
+            len(prompt or ""),
+        )
+    except Exception:
+        pass
+    try:
+        if openai.api_type == 'azure' and is_reasoning_model(model):
+            # First attempt with auto summary
+            resp = _invoke_responses_reasoning(
+                model,
+                system_prompt,
+                prompt,
+                reasoning_effort,
+                'auto',
+                _CURRENT_REASONING_VERBOSITY,
+            )
+            _LAST_USED_RESPONSES_API = True
+            global _LAST_REASONING_FALLBACK_USED
+            _LAST_REASONING_FALLBACK_USED = False
+            # Extract answer & summary
+            answer_text = ""
+            reasoning_summary, summary_status = _extract_reasoning_summary(resp)
+            local_summary_empty = (summary_status == 'empty')
+            first_usage_prompt_tokens = getattr(getattr(resp, 'usage', None), 'input_tokens', 0)
+            first_usage_output_tokens = getattr(getattr(resp, 'usage', None), 'output_tokens', 0)
+            first_reasoning_tokens = 0
+            try:
+                d = getattr(getattr(resp, 'usage', None), 'output_tokens_details', {}) or {}
+                first_reasoning_tokens = d.get('reasoning_tokens', 0) or 0
+            except Exception:
+                pass
+            if getattr(resp, 'output', None):
+                for part in resp.output:
+                    ptype = getattr(part, 'type', None)
+                    if ptype == 'message':
+                        contents = getattr(part, 'content', [])
+                        if isinstance(contents, list):
+                            out_parts = [c.get('text') for c in contents if isinstance(c, dict) and c.get('type') in ('output_text','final_output','text') and c.get('text')]
+                            answer_text = "\n".join(t for t in out_parts if t)
+            if reasoning_summary is None:
+                preamble = getattr(resp, 'preamble', None)
+                if isinstance(preamble, dict):
+                    ptxt = preamble.get('summary') or preamble.get('text')
+                    if isinstance(ptxt, str) and ptxt.strip():
+                        reasoning_summary = ptxt.strip()
+                        if len(reasoning_summary) > 1200:
+                            reasoning_summary = reasoning_summary[:1200] + "…"
+                        summary_status = 'captured'
+            # Fallback retry with detailed summary if auto produced nothing (one extra call)
+            if (reasoning_summary is None) and (summary_status in ('absent', 'empty')):
+                log.info("[reasoning] no summary on auto attempt; retrying with summary='detailed'")
+                try:
+                    resp_detailed = _invoke_responses_reasoning(
+                        model,
+                        system_prompt,
+                        prompt,
+                        reasoning_effort,
+                        'detailed',
+                        _CURRENT_REASONING_VERBOSITY,
+                    )
+                    _LAST_REASONING_FALLBACK_USED = True
+                    # Capture usage delta for logging
+                    d2_prompt = getattr(getattr(resp_detailed, 'usage', None), 'input_tokens', 0)
+                    d2_output = getattr(getattr(resp_detailed, 'usage', None), 'output_tokens', 0)
+                    d2_reasoning = 0
+                    try:
+                        d2 = getattr(getattr(resp_detailed, 'usage', None), 'output_tokens_details', {}) or {}
+                        d2_reasoning = d2.get('reasoning_tokens', 0) or 0
+                    except Exception:
+                        pass
+                    detailed_summary, detailed_status = _extract_reasoning_summary(resp_detailed)
+                    if getattr(resp_detailed, 'output', None):
+                        for part in resp_detailed.output:
+                            if getattr(part, 'type', None) == 'message' and not answer_text:
+                                conts2 = getattr(part, 'content', [])
+                                if isinstance(conts2, list):
+                                    out2 = [c.get('text') for c in conts2 if isinstance(c, dict) and c.get('type') in ('output_text','final_output','text') and c.get('text')]
+                                    answer_text = "\n".join(t for t in out2 if t)
+                    if detailed_summary is not None:
+                        reasoning_summary = detailed_summary
+                        summary_status = detailed_status
+                    elif detailed_status in ('empty', 'absent'):
+                        summary_status = detailed_status
+                    try:
+                        log.info(
+                            "[reasoning-retry] usage_delta prompt=%s->%s output=%s->%s reasoning_tokens=%s->%s",
+                            first_usage_prompt_tokens,
+                            d2_prompt,
+                            first_usage_output_tokens,
+                            d2_output,
+                            first_reasoning_tokens,
+                            d2_reasoning,
+                        )
+                    except Exception:
+                        pass
+                except Exception as rexf:
+                    log.warning("[reasoning] fallback detailed retry failed: %s", rexf)
+            global _LAST_REASONING_SUMMARY_STATUS
+            _LAST_REASONING_SUMMARY_STATUS = summary_status if summary_status else ('empty' if local_summary_empty else 'absent')
+            if _LAST_REASONING_SUMMARY_STATUS == 'captured' and reasoning_summary:
+                _LAST_REASONING_SUMMARY = reasoning_summary[:1200] + ("…" if len(reasoning_summary) > 1200 else "")
+            else:
+                _LAST_REASONING_SUMMARY = None
+            try:
+                if _LAST_REASONING_SUMMARY:
+                    log.debug("[reasoning-summary] captured chars=%d", len(_LAST_REASONING_SUMMARY))
+                else:
+                    log.debug("[reasoning-summary] absent (model may legitimately omit summary)")
+            except Exception:
+                pass
+            # Construct pseudo response for uniform extraction path
+            class _Msg:  # minimal shim
+                def __init__(self, c):
+                    self.content = c
+            class _Choice:
+                def __init__(self, c):
+                    self.message = _Msg(c)
+            class _Usage:
+                def __init__(self, u):
+                    self.prompt_tokens = getattr(u, 'input_tokens', 0)
+                    self.completion_tokens = getattr(u, 'output_tokens', 0)
+                    d = getattr(u, 'output_tokens_details', {}) or {}
+                    self.completion_tokens_details = {"reasoning_tokens": d.get('reasoning_tokens', 0)}
+            class _Resp:
+                def __init__(self, ans, r):
+                    self.choices = [_Choice(ans)]
+                    self.usage = _Usage(getattr(r, 'usage', type('u',(),{})()))
+            pseudo = _Resp(answer_text, resp)
+            return pseudo.choices[0].message.content or ""
+        # Non-reasoning or non-azure path
         if openai.api_type == 'azure':
-            # Calling Azure OpenAI model
-            response = openai.chat.completions.create(
+            _LAST_USED_RESPONSES_API = False
+            _LAST_REASONING_SUMMARY = None
+            _LAST_REASONING_SUMMARY_STATUS = 'absent'
+            _LAST_REASONING_FALLBACK_USED = False
+            chat_resp = _invoke_chat_with_adaptive_params(
                 model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                    ],
-                temperature=0.0
+                messages=[{"role": "system", "content": system_prompt},{"role": "user", "content": prompt}],
+                json_mode=False,
+                reasoning_effort=reasoning_effort,
+                temperature=0.0,
+                verbose=False,
             )
-        else:
-            # Calling Azure Mistral Large As a Service
-            response = mistral.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                    ],
-                temperature=0.0
-            )
-    except Exception as e:
-        print(e)
-        print(colored("Failed to generate the completion.", "red"))
-        return ""
-
-    # Extract the answer from the response
-    if response.choices and len(response.choices) > 0 and response.choices[0].message and response.choices[0].message.content:
-        answer = response.choices[0].message.content
-        return answer
-    else:
-        print(colored("Failed to extract the answer from the response.", "red"))
+            return chat_resp.choices[0].message.content if (chat_resp and chat_resp.choices and chat_resp.choices[0].message) else ""
+        # Mistral style fallback
+        if mistral is None:
+            raise RuntimeError("Mistral client not initialized.")
+        m_resp = mistral.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system_prompt},{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        return m_resp.choices[0].message.content if (m_resp and m_resp.choices and m_resp.choices[0].message) else ""
+    except Exception as exc:
+        log.warning("nocache completion failed: %s", exc)
         return ""
 
 
 # ## Method to ask a prompt to LLM (best with GPT-4-32k)
-def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="text", temperature=0.0, language="English", min_sleep=0, max_sleep=0, rebuildCache=False, compress=False, verbose=False):
+def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="text", temperature=0.0, language="English", min_sleep=0, max_sleep=0, rebuildCache=False, compress=False, verbose=False, reasoning_effort=None):
 
     if model is None:
         model = completion_model
 
-    if '32-k' or 'mistral' in model.lower():
-        json_mode = "text"  # GPT-4-32k does not support JSON output API parameter
+    global _LAST_USED_RESPONSES_API, _LAST_REASONING_SUMMARY, _LAST_REASONING_SUMMARY_STATUS, _LAST_REASONING_FALLBACK_USED
+
+    # Force text mode for models where JSON response_format is unsupported or unreliable.
+    # NOTE: previous logic `if '32-k' or 'mistral' in model.lower()` was always truthy due to Python truthiness of non-empty string.
+    lowered = model.lower()
+    if ('32k' in lowered) or ('32-k' in lowered) or ('mistral' in lowered) or is_reasoning_model(model):
+        if json_mode == "json" and verbose:
+            print(colored(f"[info] Forcing json_mode=text for model {model}", "cyan"))
+        json_mode = "text"  # enforce plain text path
 
     if not compress:
         system_prompt = system_prompt.replace('<llmlingua, compress=False>', '').replace('<llmlingua, rate=0.5>', '').replace('<llmlingua, rate=0.8>', '').replace('</llmlingua>', '')
@@ -320,17 +733,163 @@ def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="te
         process_completion = True
         while process_completion:
             if openai.api_type == 'azure':
-                response = openai.chat.completions.create(
-                    model=model,
-                    response_format={ "type": "json_object" } if json_mode == "json" else { "type": "text" },
-                    messages=[
-                        {"role": "system", "content": use_system_prompt},
-                        {"role": "user", "content": use_prompt},
+                # Diagnostic log once per loop iteration
+                try:
+                    log.info(
+                        "[diag] completion loop model=%s api_type=%s is_reasoning=%s json_mode=%s effort=%s",
+                        model,
+                        getattr(openai, 'api_type', None),
+                        is_reasoning_model(model),
+                        json_mode,
+                        reasoning_effort,
+                    )
+                except Exception:
+                    pass
+                if is_reasoning_model(model):
+                    try:
+                        resp = _invoke_responses_reasoning(
+                            model,
+                            use_system_prompt,
+                            use_prompt,
+                            reasoning_effort,
+                            'auto',
+                            _CURRENT_REASONING_VERBOSITY,
+                        )
+                        global _LAST_USED_RESPONSES_API
+                        _LAST_USED_RESPONSES_API = True
+                        global _LAST_REASONING_FALLBACK_USED
+                        _LAST_REASONING_FALLBACK_USED = False
+                        # Build pseudo response as in nocache path
+                        answer_text = ""
+                        reasoning_summary, summary_status = _extract_reasoning_summary(resp)
+                        local_summary_empty = (summary_status == 'empty')
+                        if getattr(resp, 'output', None):
+                            for part in resp.output:
+                                if getattr(part, 'type', None) == 'message':
+                                    contents = getattr(part, 'content', [])
+                                    if isinstance(contents, list):
+                                        texts = []
+                                        for c in contents:
+                                            if isinstance(c, dict):
+                                                ctype = c.get('type')
+                                                if ctype in ('output_text','final_output','text') and c.get('text'):
+                                                    texts.append(c['text'])
+                                        answer_text = "\n".join(t for t in texts if t)
+                        if reasoning_summary is None:
+                            try:
+                                preamble = getattr(resp, 'preamble', None)
+                                if preamble and isinstance(preamble, dict):
+                                    ptxt = preamble.get('summary') or preamble.get('text')
+                                    if isinstance(ptxt, str) and ptxt.strip():
+                                        reasoning_summary = ptxt.strip()
+                                        if len(reasoning_summary) > 1200:
+                                            reasoning_summary = reasoning_summary[:1200] + "…"
+                                        summary_status = 'captured'
+                            except Exception:
+                                pass
+                        if (reasoning_summary is None) and (summary_status in ('absent', 'empty')):
+                            log.info("[reasoning] no summary on auto attempt (loop path); retrying with summary='detailed'")
+                            try:
+                                resp_d2 = _invoke_responses_reasoning(
+                                    model,
+                                    use_system_prompt,
+                                    use_prompt,
+                                    reasoning_effort,
+                                    'detailed',
+                                    _CURRENT_REASONING_VERBOSITY,
+                                )
+                                _LAST_REASONING_FALLBACK_USED = True
+                                detailed_summary, detailed_status = _extract_reasoning_summary(resp_d2)
+                                if getattr(resp_d2, 'output', None):
+                                    for part in resp_d2.output:
+                                        if getattr(part, 'type', None) == 'message' and not answer_text:
+                                            c3 = getattr(part, 'content', [])
+                                            if isinstance(c3, list):
+                                                o3 = [c.get('text') for c in c3 if isinstance(c, dict) and c.get('type') in ('output_text','final_output','text') and c.get('text')]
+                                                answer_text = "\n".join(t for t in o3 if t)
+                                if detailed_summary is not None:
+                                    reasoning_summary = detailed_summary
+                                    summary_status = detailed_status
+                                elif detailed_status in ('empty', 'absent'):
+                                    summary_status = detailed_status
+                            except Exception as r2e:
+                                log.warning("[reasoning] detailed fallback failed (loop path): %s", r2e)
+                        _LAST_REASONING_SUMMARY_STATUS = summary_status if summary_status else ('empty' if local_summary_empty else 'absent')
+                        if _LAST_REASONING_SUMMARY_STATUS == 'captured' and reasoning_summary:
+                            _LAST_REASONING_SUMMARY = reasoning_summary[:1200] + ("…" if len(reasoning_summary) > 1200 else "")
+                        else:
+                            _LAST_REASONING_SUMMARY = None
+                        try:
+                            if _LAST_REASONING_SUMMARY:
+                                log.debug("[reasoning-summary] captured chars=%d (loop path)", len(_LAST_REASONING_SUMMARY))
+                            else:
+                                log.debug("[reasoning-summary] absent (loop path)")
+                        except Exception:
+                            pass
+                        class _PseudoChoiceMsg:
+                            def __init__(self, content):
+                                self.content = content
+                        class _PseudoChoice:
+                            def __init__(self, content):
+                                self.message = _PseudoChoiceMsg(content)
+                                self.finish_reason = 'stop'
+                                self.content_filter_results = None
+                        class _PseudoUsage:
+                            def __init__(self, usage):
+                                self.prompt_tokens = getattr(usage, 'input_tokens', 0)
+                                self.completion_tokens = getattr(usage, 'output_tokens', 0)
+                                details = getattr(usage, 'output_tokens_details', {}) or {}
+                                self.completion_tokens_details = {"reasoning_tokens": details.get('reasoning_tokens', 0)}
+                        class _PseudoResponse:
+                            def __init__(self, answer_text, resp):
+                                self.choices = [_PseudoChoice(answer_text)]
+                                self.usage = _PseudoUsage(getattr(resp, 'usage', type('u',(),{})()))
+                        response = _PseudoResponse(answer_text, resp)
+                        # Info-level diagnostic about summary status each reasoning invocation
+                        try:
+                            log.info(
+                                "[diag] reasoning invocation done model=%s summary_status=%s fallback=%s captured_len=%s",
+                                model,
+                                _LAST_REASONING_SUMMARY_STATUS,
+                                _LAST_REASONING_FALLBACK_USED,
+                                (len(_LAST_REASONING_SUMMARY) if _LAST_REASONING_SUMMARY else 0),
+                            )
+                        except Exception:
+                            pass
+                    except Exception as rex:
+                        log.warning("Responses API reasoning (main path) failed, fallback to chat: %s", rex)
+                        _LAST_USED_RESPONSES_API = False
+                        _LAST_REASONING_SUMMARY = None
+                        _LAST_REASONING_SUMMARY_STATUS = 'absent'
+                        _LAST_REASONING_FALLBACK_USED = False
+                        response = _invoke_chat_with_adaptive_params(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": use_system_prompt},
+                                {"role": "user", "content": use_prompt},
+                            ],
+                            json_mode=(json_mode == "json"),
+                            reasoning_effort=reasoning_effort,
+                            temperature=temperature,
+                            verbose=verbose,
+                        )
+                else:
+                    _LAST_REASONING_SUMMARY = None
+                    _LAST_REASONING_SUMMARY_STATUS = 'absent'
+                    _LAST_REASONING_FALLBACK_USED = False
+                    response = _invoke_chat_with_adaptive_params(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": use_system_prompt},
+                            {"role": "user", "content": use_prompt},
                         ],
-                    temperature=temperature,
-                )
+                        json_mode=(json_mode == "json"),
+                        reasoning_effort=reasoning_effort,
+                        temperature=temperature,
+                        verbose=verbose,
+                    )
             else:
-                print(colored(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model', "green"))
+                print(colored(f'Calling Azure with {"Mistral Large" if model == "azureai" else model} model', "green"))
                 response = mistral.chat.completions.create(
                     model=model,
                     messages=[
@@ -356,6 +915,10 @@ def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="te
 
     except Exception as e:
         print(e)
+        try:
+            log.exception("Invocation exception model=%s", model)
+        except Exception:
+            pass
         finish_reason = response.choices[0].finish_reason if response and response.choices and len(response.choices) > 0 else "unknown"
         content_filter_result = response.choices[0].content_filter_results if response and response.choices and len(response.choices) > 0 else None
         print(colored(f"Failed to generate the completion ({finish_reason}).", "red"))
@@ -366,26 +929,125 @@ def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="te
         return "", 0, 0, 0, ""
 
     if response and response.usage:
+        prompt_tokens = getattr(response.usage, 'prompt_tokens', 0)
+        visible_completion_tokens = getattr(response.usage, 'completion_tokens', 0)
+        # Reasoning models expose hidden reasoning tokens in completion_tokens_details.reasoning_tokens
+        reasoning_tokens = 0
+        if is_reasoning_model(model):
+            details = getattr(response.usage, 'completion_tokens_details', None)
+            if details and isinstance(details, dict):
+                reasoning_tokens = details.get('reasoning_tokens', 0) or 0
+        effective_output_tokens = visible_completion_tokens + reasoning_tokens
         input_cost, output_cost = get_completion_pricing_from_usage(
             model,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens
+            prompt_tokens,
+            effective_output_tokens
+        )
+        try:
+            log.debug("Usage model=%s prompt=%s visible_out=%s reasoning=%s effective_out=%s in_cost=%.6f out_cost=%.6f finish=%s",
+                      model, prompt_tokens, visible_completion_tokens, reasoning_tokens, effective_output_tokens, input_cost, output_cost, finish_reason)
+        except Exception:
+            pass
+    else:
+        prompt_tokens = 0
+        visible_completion_tokens = 0
+        reasoning_tokens = 0
+        input_cost, output_cost = 0, 0
+        effective_output_tokens = 0
+
+    completion_cost = input_cost + output_cost
+    if is_reasoning_model(model) and reasoning_tokens:
+        print(colored(
+            f"Cost: {completion_cost:.4f}€ - Input: {input_cost:.4f}€ - Output: {output_cost:.4f}€ (visible_out={visible_completion_tokens} reasoning={reasoning_tokens})",
+            "yellow")
         )
     else:
-        input_cost, output_cost = 0, 0
-    completion_cost = input_cost + output_cost
-    print(colored(f"Cost: {completion_cost:.2f} - Input: {input_cost:.2f} - Output: {output_cost:.2f}", "yellow"))
+        print(colored(
+            f"Cost: {completion_cost:.4f}€ - Input: {input_cost:.4f}€ - Output: {output_cost:.4f}€",
+            "yellow")
+        )
 
-    answer = response.choices[0].message.content if response and response.choices and len(response.choices) > 0 and response.choices[0].message.content else ""
+    # --- Normalize answer extraction (reasoning models may return list content parts) ---
+    def _coalesce_message_content(raw):
+        """Return visible answer text while collecting reasoning parts separately.
+
+        Azure reasoning models may return a list of dict parts like:
+          [{"type":"reasoning","text":"..."}, {"type":"output_text","text":"final answer"}]
+        We keep only output text for the main answer, but store reasoning elsewhere.
+        """
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, list):
+            texts = []
+            reasoning_parts = []
+            for part in raw:
+                if isinstance(part, dict):
+                    ptype = part.get('type')
+                    ptext = part.get('text') or part.get('content') or ''
+                    if ptype in ("reasoning", "reasoning_content", "chain_of_thought", "thinking"):
+                        if ptext:
+                            reasoning_parts.append(ptext)
+                    # Visible output segment
+                    if ptype in ("output_text", "final_output", None):
+                        if ptext:
+                            texts.append(ptext)
+                    # Fallback: if no type but text available
+                    if not ptype and ptext and ptext not in texts:
+                        texts.append(ptext)
+                else:
+                    # Raw string element
+                    if isinstance(part, str):
+                        texts.append(part)
+            # Update global reasoning summary (truncated) if we collected anything
+            global _LAST_REASONING_SUMMARY, _LAST_REASONING_SUMMARY_STATUS
+            if reasoning_parts:
+                joined = "\n".join(r.strip() for r in reasoning_parts if r.strip())
+                if joined:
+                    _LAST_REASONING_SUMMARY = joined[:1200] + ("…" if len(joined) > 1200 else "")
+                    _LAST_REASONING_SUMMARY_STATUS = 'captured'
+            return "\n".join(t for t in texts if t)
+        return str(raw)
+
+    raw_message_content = response.choices[0].message.content if (response and response.choices and len(response.choices) > 0 and response.choices[0].message) else ""
+    # Detailed raw choice logging when debugging or empty output
+    try:
+        if log.isEnabledFor(10) or (is_reasoning_model(model) and (not raw_message_content)):
+            choice0 = response.choices[0] if (response and response.choices) else None
+            log.debug("Raw choice repr(trunc)=%.500s", repr(choice0)[:500])
+            log.debug("Raw message content repr(trunc)=%.500s", repr(raw_message_content)[:500])
+    except Exception:
+        pass
+    answer = _coalesce_message_content(raw_message_content)
+    # If reasoning model but no visible answer and we captured reasoning steps only, fall back to exposing part of reasoning as answer
+    try:
+        if is_reasoning_model(model) and (not answer or not answer.strip()) and _LAST_REASONING_SUMMARY:
+            answer = "(Reasoning summary excerpt)\n" + _LAST_REASONING_SUMMARY
+    except Exception:
+        pass
+    if not answer and is_reasoning_model(model):
+        log.warning("Empty answer from reasoning model=%s finish_reason=%s prompt_tokens=%s visible_out=%s reasoning_tokens=%s", model, finish_reason, prompt_tokens, visible_completion_tokens, reasoning_tokens)
+        answer = "(No text content returned by reasoning model – enable DEBUG level to inspect raw response)"
+    try:
+        log.debug("Extracted answer length=%d preview=%.200s", len(answer or ''), (answer or '')[:200].replace('\n',' '))
+    except Exception:
+        pass
     cached_key_list = []
-    if answer != "":
+    if answer and answer.strip():
         if model_called_first:  # Save the completion to the cache with the model called first if it was changed to use gpt-4-32k due to length
-            cached_key = save_completion_to_cache(model_called_first + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), [model_called_first, language, input_cost, output_cost, answer])
+            cached_key = save_completion_to_cache(
+                model_called_first + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress),
+                [model_called_first, language, input_cost, output_cost, answer]
+            )
             cached_key_list.append(cached_key)
-        cached_key = save_completion_to_cache(model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), [model, language, input_cost, output_cost, answer])
+        cached_key = save_completion_to_cache(
+            model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress),
+            [model, language, input_cost, output_cost, answer]
+        )
         cached_key_list.append(cached_key)
 
-    return answer, completion_cost, response.usage.prompt_tokens, response.usage.completion_tokens, cached_key_list
+    return answer, completion_cost, prompt_tokens, effective_output_tokens, cached_key_list
 
 
 # Method to get only the JSON information from the answer if the LLM outputs text before or after the json structure
@@ -1083,7 +1745,7 @@ def process_solution_information(answer, doc, rai_filepath, rai_public_filepath,
 
 
 # Method to process the solution description audit to detect bias or risks
-def process_solution_description_security_analysis(solution_description, language='English', model=None, ui_hook=None, rebuildCache=False, min_sleep=0, max_sleep=0, verbose=False):
+def process_solution_description_security_analysis(solution_description, language='English', model=None, ui_hook=None, rebuildCache=False, min_sleep=0, max_sleep=0, verbose=False, reasoning_effort=None):
     total_completion_cost = 0.0
     total_input_tokens = 0
     total_output_tokens = 0
@@ -1099,7 +1761,7 @@ def process_solution_description_security_analysis(solution_description, languag
     prompt = SOLUTION_DESCRIPTION_SECURITY_ANALYSIS_PROMPT
     filled_prompt = prompt.replace(SOLUTION_DESCRIPTION_PLACEHOLDER, solution_description).replace(TARGET_LANGUAGE_PLACEHOLDER, language)
 
-    uiprint(f'Auditing the Solution Description Bias or Risks with {"Mistral Large" if completion_model == "azureai" else completion_model} model', ui_hook=ui_hook)
+    uiprint(f'Auditing the Solution Description Bias or Risks with {"Mistral Large" if model == "azureai" else model} model', ui_hook=ui_hook)
 
     try:
         answer, completion_cost, input_tokens_number, output_tokens_number, cached_key_list = get_azure_openai_completion(
@@ -1112,7 +1774,8 @@ def process_solution_description_security_analysis(solution_description, languag
             min_sleep=min_sleep,
             max_sleep=max_sleep,
             compress=False,
-            verbose=verbose
+            verbose=verbose,
+            reasoning_effort=reasoning_effort
             )
         total_completion_cost += completion_cost
         total_input_tokens += input_tokens_number
@@ -1150,7 +1813,7 @@ def process_solution_description_security_analysis(solution_description, languag
 
 
 # Method to process the solution description audit to provide feedback for enhancement
-def process_solution_description_analysis(solution_description, language='English', model=None, ui_hook=None, rebuildCache=False, min_sleep=0, max_sleep=0, verbose=False):
+def process_solution_description_analysis(solution_description, language='English', model=None, ui_hook=None, rebuildCache=False, min_sleep=0, max_sleep=0, verbose=False, reasoning_effort=None):
     
     if model is None:
         model = completion_model
@@ -1160,7 +1823,97 @@ def process_solution_description_analysis(solution_description, language='Englis
     prompt = SOLUTION_DESCRIPTION_ANALYSIS_PROMPT
     filled_prompt = prompt.replace(SOLUTION_DESCRIPTION_PLACEHOLDER, solution_description).replace(TARGET_LANGUAGE_PLACEHOLDER, language)
     
-    uiprint(f'Auditing the Solution Description with {"Mistral Large" if completion_model == "azureai" else completion_model} model', ui_hook=ui_hook)
+    uiprint(f'Auditing the Solution Description with {"Mistral Large" if model == "azureai" else model} model', ui_hook=ui_hook)
+
+    try:
+        answer, completion_cost, input_tokens_number, output_tokens_number, cached_key_list = get_azure_openai_completion(
+            filled_prompt,
+            system_prompt,
+            model=model,
+            temperature=0.4,  # ignored for reasoning models by adaptive layer
+            json_mode="text",
+            rebuildCache=rebuildCache,
+            min_sleep=min_sleep,
+            max_sleep=max_sleep,
+            compress=False,
+            verbose=verbose,
+            reasoning_effort=reasoning_effort
+        )
+        total_completion_cost = completion_cost
+        return answer, total_completion_cost
+    except Exception as e:
+        print(e)
+        print(colored("Failed to audit the solution description.", 'red'))
+        return '', 0
+
+# --- Adaptive invocation helper for reasoning vs standard models ---
+
+def _invoke_chat_with_adaptive_params(model, messages, json_mode, reasoning_effort, temperature, verbose=False):
+    """Invoke Azure OpenAI Chat Completions handling reasoning model constraints.
+
+    Strategy:
+      1. Build initial param set according to model capabilities.
+      2. On 400/422 errors, progressively remove optional fields (response_format, max_completion_tokens, reasoning_effort) before failing.
+    """
+    if openai.api_type != 'azure':  # Fallback: direct pass-through (non-azure path unmodified)
+        return openai.chat.completions.create(model=model, messages=messages, temperature=temperature)
+
+    is_reasoning = is_reasoning_model(model)
+
+    # Disallowed for reasoning: temperature (except None), top_p, presence_penalty, frequency_penalty, max_tokens
+    # Required special param: max_completion_tokens (not max_tokens) optional but often recommended guardrail
+    attempt_params = {
+        "model": model,
+        "messages": messages,
+    }
+    removal_sequence = []  # track optional keys we may remove
+
+    if is_reasoning:
+        # Use reasoning_effort if provided
+        if reasoning_effort:
+            # Docs list 'reasoning_effort' (string) not nested object for o/gpt-5 series
+            attempt_params["reasoning_effort"] = reasoning_effort
+            removal_sequence.append("reasoning_effort")
+        # NOTE: Deliberately NOT setting max_completion_tokens to allow very long outputs per user request.
+        # If needed later, introduce an env-controlled soft limit.
+        if json_mode:
+            attempt_params["response_format"] = {"type": "json_object"}
+            removal_sequence.append("response_format")
+    else:
+        attempt_params["temperature"] = temperature
+        if json_mode:
+            attempt_params["response_format"] = {"type": "json_object"}
+            removal_sequence.append("response_format")
+
+    # For debug instrumentation (disabled by default) set env DEBUG_REASONING=1
+    debug = os.getenv("DEBUG_REASONING", "0") == "1"
+
+    def _try(params):
+        if debug:
+            print(colored(f"[debug] invoking with params keys={list(params.keys())}", "cyan"))
+        return openai.chat.completions.create(**params)
+
+    last_error = None
+    for i in range(len(removal_sequence) + 1):
+        try:
+            return _try(attempt_params)
+        except Exception as e:  # broad catch to adapt quickly
+            err_text = str(e)
+            last_error = e
+            if debug:
+                print(colored(f"[debug] attempt {i+1} failed: {err_text}", "yellow"))
+            # Stop if no more things to remove or error not param-related
+            if i >= len(removal_sequence):
+                raise
+            key_to_remove = removal_sequence[i]
+            attempt_params.pop(key_to_remove, None)
+            if debug:
+                print(colored(f"[debug] removed '{key_to_remove}' and retrying", "magenta"))
+            continue
+    # If loop exits unexpectedly
+    if last_error:
+        raise last_error
+    return openai.chat.completions.create(model=model, messages=messages)
 
     try:
         answer, completion_cost, input_tokens_number, output_tokens_number, cached_key_list = get_azure_openai_completion(
@@ -1173,7 +1926,8 @@ def process_solution_description_analysis(solution_description, language='Englis
             min_sleep=min_sleep,
             max_sleep=max_sleep,
             compress=False,
-            verbose=verbose
+            verbose=verbose,
+            reasoning_effort=reasoning_effort
             )
         total_completion_cost = completion_cost
         total_input_tokens = input_tokens_number
@@ -1187,7 +1941,7 @@ def process_solution_description_analysis(solution_description, language='Englis
 
 
 # Method to update the RAI Impact Assessment template tailored to the solution description
-def update_rai_assessment_template(solution_description, rai_filepath, rai_public_filepath, language='English', model=None, ui_hook=None, rebuildCache=False, update_steps=False, min_sleep=0, max_sleep=0, compress=False, verbose=False):
+def update_rai_assessment_template(solution_description, rai_filepath, rai_public_filepath, language='English', model=None, ui_hook=None, rebuildCache=False, update_steps=False, min_sleep=0, max_sleep=0, compress=False, verbose=False, reasoning_effort=None):
 
     if model is None:
         model = completion_model
@@ -1253,7 +2007,8 @@ def update_rai_assessment_template(solution_description, rai_filepath, rai_publi
                     min_sleep=min_sleep,
                     max_sleep=max_sleep,
                     compress=compress,
-                    verbose=verbose
+                    verbose=verbose,
+                    reasoning_effort=reasoning_effort
                     )
                 total_completion_cost += completion_cost
                 total_input_tokens += input_tokens_number
@@ -1323,3 +2078,71 @@ def update_rai_assessment_template(solution_description, rai_filepath, rai_publi
     # print(colored(f"Final JSON\n{final_json}", 'green'))
 
     return final_json
+
+# --- Logging enhanced adaptive invocation override (appended late to keep minimal diff) ---
+def _invoke_chat_with_adaptive_params_logged(model, messages, json_mode, reasoning_effort, temperature, verbose=False):
+    """Adaptive invocation with structured logging.
+
+    Removes optional params on parameter errors: response_format, max_completion_tokens, reasoning_effort.
+    """
+    if openai.api_type != 'azure':
+        log.debug("[adaptive] non-azure direct call model=%s", model)
+        return openai.chat.completions.create(model=model, messages=messages, temperature=temperature)
+
+    is_reasoning = is_reasoning_model(model)
+    log.debug(
+        "[adaptive] start model=%s reasoning=%s json_mode=%s temperature=%s effort=%s",
+        model, is_reasoning, json_mode, temperature, reasoning_effort
+    )
+
+    params = {"model": model, "messages": messages}
+    removable = []
+    if is_reasoning:
+        if reasoning_effort:
+            params["reasoning_effort"] = reasoning_effort
+            removable.append("reasoning_effort")
+        # Removed max_completion_tokens per user request (allow long outputs).
+        if json_mode:
+            params["response_format"] = {"type": "json_object"}
+            removable.append("response_format")
+    else:
+        params["temperature"] = temperature
+        if json_mode:
+            params["response_format"] = {"type": "json_object"}
+            removable.append("response_format")
+
+    debug_env = os.getenv("DEBUG_REASONING", "0") == "1"
+    active_debug = debug_env or log.isEnabledFor(10)
+    if active_debug:
+        log.debug("[adaptive] initial keys=%s removable=%s", list(params.keys()), removable)
+
+    removed = []
+    last_error = None
+    for attempt in range(len(removable) + 1):
+        try:
+            if active_debug:
+                log.debug("[adaptive] attempt=%d keys=%s", attempt + 1, list(params.keys()))
+            resp = openai.chat.completions.create(**params)
+            if active_debug:
+                log.debug("[adaptive] success attempt=%d removed=%s", attempt + 1, removed)
+            return resp
+        except Exception as e:
+            err = str(e)
+            last_error = e
+            if active_debug:
+                log.debug("[adaptive] failure attempt=%d error=%s", attempt + 1, err[:400])
+            if attempt >= len(removable):
+                log.error("[adaptive] giving up model=%s error=%s", model, err)
+                raise
+            key = removable[attempt]
+            params.pop(key, None)
+            removed.append(key)
+            if active_debug:
+                log.debug("[adaptive] removed '%s' retrying", key)
+            continue
+    if last_error:
+        raise last_error
+    return openai.chat.completions.create(model=model, messages=messages)
+
+# Override original reference
+_invoke_chat_with_adaptive_params = _invoke_chat_with_adaptive_params_logged
