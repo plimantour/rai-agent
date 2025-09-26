@@ -46,6 +46,35 @@ CLI optional arguments:
 python -m streamlit run streamlit_ui_main.py --server.port 8000 --server.address 0.0.0.0
 ```
 
+### HTMX UI (FastAPI)
+```bash
+uvicorn htmx_ui_main:app --host 0.0.0.0 --port 8001
+```
+
+The HTMX version uses FastAPI + Jinja templates and reuses the same Azure configuration
+as the Streamlit app. When running locally without Azure App Service authentication,
+explicitly opt in to the dev bypass and set the following environment variables to emulate
+an authenticated user:
+
+```bash
+export HTMX_ALLOW_DEV_BYPASS=true  # only for local development
+export HTMX_DEV_USER_ID="00000000-0000-0000-0000-000000000000"
+export HTMX_DEV_USER_NAME="Firstname Lastname"
+# optional if you want to match the Key Vault allow list
+export HTMX_DEV_USER_UPN="alias@example.com"
+```
+
+The bypass works only for requests originating from `localhost`/`127.0.0.1` and should
+never be enabled in shared or production environments. Ensure the chosen user appears
+in the `RAI-ASSESSMENT-USERS` Key Vault secret (or the
+`HTMX_FALLBACK_ALLOW_LIST` environment variable for local testing) and, if required,
+`RAI_ADMIN_USERS` for admin actions.
+
+The HTMX UI now mirrors the Streamlit MSAL login experience. When deployed to Azure,
+the FastAPI app presents a Microsoft sign-in using `AZURE_APP_REGISTRATION_CLIENT_ID`,
+`AZURE_TENANT_ID`, and `AZURE_REDIRECT_URI`, then validates the returning access token
+against Microsoft Graph before applying the same allow-list checks.
+
 ## 🔁 Admin Model & Reasoning Effort Selection
 When signed in as an admin (username present in Key Vault allow‑list) the sidebar shows:
 - Model select (each option annotated with input/output EUR per 1K tokens)

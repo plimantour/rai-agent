@@ -1,0 +1,14 @@
+{% extends "htmx/base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Access Denied</h2>
+    <p class="muted">Your account is not currently authorized to use the RAI Assessment Copilot. If you believe this is in error, contact the RAI champion team to be added to the allow list stored in Azure Key Vault.</p>
+    {% if messages %}
+    <ul class="messages">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+{% endblock %}

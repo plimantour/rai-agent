@@ -11,3 +11,9 @@ streamlit_javascript
 termcolor
 llmlingua
 azure-storage-blob
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+markdown
+requests

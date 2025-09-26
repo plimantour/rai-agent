@@ -4,6 +4,8 @@
 
 - Python 3.11+
 - Streamlit (UI shell)
+- FastAPI + HTMX (alternate UI shell with shared templates/static assets)
+- MSAL.js + Microsoft Graph (interactive auth flow shared across UIs)
 - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint
  - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
 - Azure Identity (DefaultAzureCredential) for keyless auth
@@ -21,13 +23,16 @@ Baseline Steps:
 2. Install `requirements.txt`
 3. Configure `.env` (or ensure Key Vault contains required secrets)
 4. Run CLI: `python main.py -i <folder>` (expects `solution_description.docx` inside folder)
-5. Or UI: `python -m streamlit run streamlit_ui_main.py --server.port 8000`
+5. Or UIs:
+	- Streamlit: `python -m streamlit run streamlit_ui_main.py --server.port 8000`
+	- HTMX/FastAPI: `python htmx_ui_main.py` (serves MSAL login and mirrored workflow on port 8501 by default)
 
 Environment Variables (representative):
 - `AZURE_KEYVAULT_URL`
 - `AZURE_OPENAI_API_TYPE` ("azure" or other)
 - `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_GPT_DEPLOYMENT` / `AZURE_OPENAI_API_VERSION`
 - `AZURE_TENANT_ID`, `AZURE_APP_REGISTRATION_CLIENT_ID`, `AZURE_REDIRECT_URI`
+- `MSAL_CLIENT_ID`, `MSAL_TENANT_ID`, `MSAL_REDIRECT_URI` (frontend-configured; typically mirror the backend values)
 - Storage: `AZURE_STORAGE_ACCOUNT_NAME`
 
 Key Vault Secret Names (observed):

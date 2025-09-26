@@ -13,6 +13,10 @@ Initialize structured project knowledge for the RAI Assessment automation tool. 
 
 ## Recent Changes
 
+- Introduced a parallel HTMX + FastAPI UI (`htmx_ui_main.py`) with shared templates/static assets to mirror the Streamlit experience; users can launch either interface interchangeably.
+- Implemented an MSAL login flow for the HTMX UI that mirrors Streamlit authentication (Graph `User.Read` validation, allow-list enforcement, cookie-backed session caching, consistent messaging), with shared templates and README guidance.
+- Hardened the local development auth bypass to require `HTMX_ALLOW_DEV_BYPASS` opt-in and restrict usage to localhost, with documentation updates describing safe setup.
+- Hardened Azure Container Apps provisioning scripts for idempotency (Log Analytics `customerId`, RBAC-safe Key Vault policies, forced revision updates) and refreshed README deployment guidance.
 - Migrated Azure OpenAI initialization to the official `AzureOpenAI` client so Responses API calls hit deployment-scoped endpoints (fixes 404 fallbacks and restores reasoning summaries in the UI).
 - Initial memory-bank documentation established (core architecture & patterns)
 - Architectural decisions captured (pipeline design, caching strategy, Azure resource usage)

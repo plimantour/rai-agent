@@ -1,0 +1,139 @@
+{% macro toggle_input(label, name, checked, description) -%}
+<div class="option-item">
+    <label class="toggle-label" for="{{ name }}">
+        <input type="checkbox" id="{{ name }}" name="{{ name }}" value="1" {% if checked %}checked{% endif %}>
+        <span>{{ label }}</span>
+    </label>
+    {% if description %}<p class="muted">{{ description }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+<section class="panel">
+    <h2>Usage Guidance</h2>
+    <p class="muted">Upload a detailed solution description to generate a draft Responsible AI assessment. This tool is intended for trained Microsoft RAI champions—review all AI-generated content before submission.</p>
+</section>
+
+{% if messages %}
+<section class="panel">
+    <ul class="messages">
+    {% for msg in messages %}
+        <li>{{ msg|safe }}</li>
+    {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+<section class="layout">
+    <div class="column">
+        <section class="panel">
+            <h3>Options</h3>
+            <form hx-post="/options/general" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML">
+                {{ toggle_input("Use cached answers", "use_cache", session.use_cache, "Reuse cached LLM responses to reduce cost and latency.") }}
+                {{ toggle_input("Enable prompt compression", "use_prompt_compression", session.use_prompt_compression, "Applies llmlingua compression before sending prompts.") }}
+                {% if session.show_reasoning_summary is not none %}
+                {{ toggle_input("Show reasoning summary", "show_reasoning_summary", session.show_reasoning_summary, "Display condensed reasoning when available.") }}
+                {% endif %}
+            </form>
+        </section>
+
+        {% if user.is_admin %}
+        <section class="panel">
+            <h3>Admin Controls</h3>
+            <form class="stack" hx-post="/options/model" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML">
+                <label for="selected_model">Model</label>
+                <select id="selected_model" name="selected_model">
+                    {% for option in model_options %}
+                    <option value="{{ option.name }}" {% if option.name == session.selected_model %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+                <label for="reasoning_level">Reasoning effort</label>
+                <select id="reasoning_level" name="reasoning_level">
+                    {% for value in session.reasoning_levels %}
+                    <option value="{{ value }}" {% if value == session.reasoning_level %}selected{% endif %}>{{ value.title() }}</option>
+                    {% endfor %}
+                </select>
+                <label for="reasoning_verbosity">Reasoning verbosity</label>
+                <select id="reasoning_verbosity" name="reasoning_verbosity">
+                    {% for value in ["low", "medium", "high"] %}
+                    <option value="{{ value }}" {% if value == session.reasoning_verbosity %}selected{% endif %}>{{ value.title() }}</option>
+                    {% endfor %}
+                </select>
+                <label for="log_level">Log level</label>
+                <select id="log_level" name="log_level">
+                    {% for value in ["None", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}
+                    <option value="{{ value }}" {% if value == session.log_level %}selected{% endif %}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <div class="button-row">
+                <a class="button secondary" href="/admin/download/logs" hx-boost="false">Download access logs</a>
+                {% if admin_downloads.system_logs %}
+                <a class="button secondary" href="/admin/download/system" hx-boost="false">Download system logs</a>
+                {% endif %}
+                <form method="post" action="/admin/cache/clear" hx-post="/admin/cache/clear" hx-target="#main-content" hx-swap="outerHTML" class="inline">
+                    <button type="submit" class="button danger">Clear cache</button>
+                </form>
+            </div>
+        </section>
+        {% endif %}
+    </div>
+
+    <div class="column">
+        <section class="panel">
+            <h3>Upload Solution Description</h3>
+            <div class="stack">
+                <form class="stack" hx-post="/analysis" hx-encoding="multipart/form-data" hx-target="#main-content" hx-swap="outerHTML">
+                    <label for="analysis_file">Analyze solution description</label>
+                    <input type="file" id="analysis_file" name="file" accept=".docx,.pdf,.txt,.json" required>
+                    <button type="submit" class="button">Analyze</button>
+                </form>
+
+                <form class="stack" hx-post="/generate" hx-encoding="multipart/form-data" hx-target="#main-content" hx-swap="outerHTML">
+                    <label for="generate_file">Generate draft assessment</label>
+                    <input type="file" id="generate_file" name="file" accept=".docx,.pdf,.txt,.json" required>
+                    <button type="submit" class="button primary">Generate</button>
+                </form>
+
+                <p class="muted">Processing typically takes 10–15 minutes depending on model selection and template size. Detailed costs are displayed after completion.</p>
+            </div>
+        </section>
+
+        {% if analysis_result %}
+        <section class="panel result">
+            <h3>Solution Description Analysis</h3>
+            <p><strong>Cost:</strong> €{{ '%.4f'|format(analysis_result.cost or 0) }}</p>
+            <div class="scrollable">{{ analysis_result.html|safe }}</div>
+            {% if analysis_result.reasoning_summary %}
+            <details>
+                <summary>Reasoning summary</summary>
+                <pre>{{ analysis_result.reasoning_summary }}</pre>
+            </details>
+            {% endif %}
+            <div class="button-row">
+                <a class="button" href="/download/analysis" hx-boost="false">Download analysis DOCX</a>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if generation_result %}
+        <section class="panel result">
+            <h3>Draft RAI Assessment</h3>
+            <p>{{ generation_result.message }}</p>
+            {% if generation_result.cost is not none %}
+            <p><strong>Total cost:</strong> €{{ '%.4f'|format(generation_result.cost) }}</p>
+            {% endif %}
+            {% if generation_result.reasoning_summary %}
+            <details>
+                <summary>Reasoning summary</summary>
+                <pre>{{ generation_result.reasoning_summary }}</pre>
+            </details>
+            {% endif %}
+            <div class="button-row">
+                <a class="button" href="/download/rai-internal" hx-boost="false">Download internal draft</a>
+                <a class="button" href="/download/rai-public" hx-boost="false">Download public draft</a>
+                <a class="button" href="/download/rai-zip" hx-boost="false">Download both (ZIP)</a>
+            </div>
+        </section>
+        {% endif %}
+    </div>
+</section>

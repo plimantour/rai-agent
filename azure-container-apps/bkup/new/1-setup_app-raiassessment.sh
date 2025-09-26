@@ -51,10 +51,10 @@ ensure_log_analytics_workspace() {
         --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
         --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
         --query id --output tsv >/dev/null 2>&1; then
-        LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID=$(az monitor log-analytics workspace show \
+        LOG_ANALYTICS_WORKSPACE_ID=$(az monitor log-analytics workspace show \
             --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
             --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
-            --query customerId --output tsv)
+            --query id --output tsv)
         LOG_ANALYTICS_SHARED_KEY=$(az monitor log-analytics workspace get-shared-keys \
             --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
             --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
@@ -66,19 +66,14 @@ ensure_log_analytics_workspace() {
             --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
             --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
             --location "$LOCATION" >/dev/null
-        LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID=$(az monitor log-analytics workspace show \
+        LOG_ANALYTICS_WORKSPACE_ID=$(az monitor log-analytics workspace show \
             --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
             --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
-            --query customerId --output tsv)
+            --query id --output tsv)
         LOG_ANALYTICS_SHARED_KEY=$(az monitor log-analytics workspace get-shared-keys \
             --workspace-name "$LOG_ANALYTICS_WORKSPACE_NAME" \
             --resource-group "$LOG_ANALYTICS_RESOURCE_GROUP" \
             --query primarySharedKey --output tsv)
-    fi
-
-    if [ -z "$LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID" ] || [ -z "$LOG_ANALYTICS_SHARED_KEY" ]; then
-        echo "Failed to resolve Log Analytics workspace credentials; check permissions." >&2
-        exit 1
     fi
 }
 
@@ -93,7 +88,7 @@ ensure_container_environment() {
             --name "$CONTAINER_ENV_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --location "$LOCATION" \
-            --logs-workspace-id "$LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID" \
+            --logs-workspace-id "$LOG_ANALYTICS_WORKSPACE_ID" \
             --logs-workspace-key "$LOG_ANALYTICS_SHARED_KEY" >/dev/null
     fi
 }

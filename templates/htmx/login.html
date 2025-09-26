@@ -1,0 +1,120 @@
+{% extends "htmx/base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Sign in Required</h2>
+    <p class="muted">Use your Microsoft Entra ID account to continue. Your access will be validated against the RAI assessment allow list.</p>
+    {% if messages %}
+    <ul class="messages">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    <button id="msal-login-button" class="button primary">Sign in with Microsoft</button>
+    <p id="login-status" class="muted"></p>
+</section>
+<script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
+<script>
+(function() {
+    const config = JSON.parse('{{ msal_config_json | safe }}');
+    const loginButton = document.getElementById('msal-login-button');
+    const statusEl = document.getElementById('login-status');
+
+    if (!config.clientId || !config.tenantId || !config.redirectUri) {
+        statusEl.textContent = 'Authentication is not fully configured. Contact the administrator.';
+        loginButton.disabled = true;
+        return;
+    }
+
+    const msalInstance = new msal.PublicClientApplication({
+        auth: {
+            clientId: config.clientId,
+            authority: `https://login.microsoftonline.com/${config.tenantId}`,
+            redirectUri: config.redirectUri,
+        },
+        cache: {
+            cacheLocation: 'localStorage',
+            storeAuthStateInCookie: false,
+        },
+    });
+
+    let initialized = false;
+    msalInstance.initialize().then(() => {
+        initialized = true;
+        const accounts = msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+            msalInstance.setActiveAccount(accounts[0]);
+        }
+    }).catch((err) => {
+        console.error('MSAL initialization failed', err);
+        statusEl.textContent = 'Unable to initialize Microsoft login. See console for details.';
+        loginButton.disabled = true;
+    });
+
+    async function acquireToken() {
+        if (!initialized) {
+            await msalInstance.initialize();
+        }
+        let account = msalInstance.getActiveAccount();
+        if (!account) {
+            const accounts = msalInstance.getAllAccounts();
+            if (accounts.length > 0) {
+                account = accounts[0];
+                msalInstance.setActiveAccount(account);
+            }
+        }
+        if (!account) {
+            const loginResult = await msalInstance.loginPopup({ scopes: ['User.Read'] });
+            account = loginResult.account;
+            msalInstance.setActiveAccount(account);
+            if (loginResult.accessToken) {
+                return loginResult.accessToken;
+            }
+        }
+        const tokenResult = await msalInstance.acquireTokenSilent({
+            scopes: ['User.Read'],
+            account: account,
+        });
+        return tokenResult.accessToken;
+    }
+
+    async function signIn() {
+        statusEl.textContent = 'Signing in...';
+        loginButton.disabled = true;
+        try {
+            const accessToken = await acquireToken();
+            if (!accessToken) {
+                throw new Error('Missing access token');
+            }
+            const response = await fetch('/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accessToken }),
+            });
+            if (response.ok) {
+                statusEl.textContent = 'Sign-in successful. Loading application...';
+                window.location.reload();
+                return;
+            }
+            const payload = await response.json().catch(() => ({}));
+            if (response.status === 403) {
+                statusEl.textContent = payload.detail || 'You are not authorized to use this application.';
+            } else {
+                statusEl.textContent = payload.detail || 'Sign-in failed. Please try again or contact the administrator.';
+            }
+        } catch (error) {
+            console.error('Sign-in failed', error);
+            if (error && error.errorCode === 'interaction_in_progress') {
+                statusEl.textContent = 'A login window is already open. Complete that sign-in attempt first.';
+            } else {
+                statusEl.textContent = 'Unable to complete sign-in. Please retry.';
+            }
+        } finally {
+            loginButton.disabled = false;
+        }
+    }
+
+    loginButton.addEventListener('click', signIn);
+})();
+</script>
+{% endblock %}

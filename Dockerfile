@@ -30,4 +30,7 @@ ARG BUILD_TIME
 ENV BUILD_TIME=${BUILD_TIME}
 
 # Run with Streamlit
-CMD [ "streamlit", "run", "streamlit_ui_main.py", "--server.port=80", "--server.address=0.0.0.0", "--server.enableWebsocketCompression=false" ]
+# CMD [ "streamlit", "run", "streamlit_ui_main.py", "--server.port=80", "--server.address=0.0.0.0", "--server.enableWebsocketCompression=false" ]
+
+# Run with htmx
+CMD ["uvicorn", "htmx_ui_main:app", "--host", "0.0.0.0", "--port", "80"]

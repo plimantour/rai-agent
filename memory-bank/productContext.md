@@ -15,7 +15,7 @@ Organizations building custom AI solutions must complete a Responsible AI (RAI) 
 
 ## How It Should Work
 
-1. User supplies a `solution_description.docx` (CLI) or uploads via Streamlit UI.
+1. User supplies a `solution_description.docx` (CLI) or uploads via Streamlit or HTMX UI.
 2. System initializes Azure credentials + model deployment metadata from Key Vault (keyless if possible).
 3. Multi-step LLM pipeline runs in dependency order:
 	- Intended Uses → Stakeholders → Goals (A5/T3, Fairness) → Scope → Solution Info → Assessments → Risks → Impact → Harms → Disclosure

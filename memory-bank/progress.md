@@ -12,6 +12,8 @@
 - Sep 2025 (mid): Added admin model selector, reasoning effort control, adaptive reasoning param handling, reasoning token cost inclusion.
 - Sep 2025 (late): Removed `max_completion_tokens` cap for reasoning models (allow long outputs); added dynamic log level UI, raw response & empty-answer diagnostics, noisy logger suppression, Responses API reasoning summaries, single-click timestamped system logs download.
 - Sep 2025 (latest): Switched to `AzureOpenAI` SDK client to keep Responses API calls on deployment endpoints (fixing 404 fallbacks) and ensured rotating file handler captures DEBUG traces regardless of console level.
+- Sep 2025 (current): Delivered HTMX + FastAPI UI alternative (`htmx_ui_main.py`) with shared templates/static assets while tightening local dev auth bypass (explicit `HTMX_ALLOW_DEV_BYPASS` + localhost restriction) and documenting dual-launch workflows.
+- Sep 2025 (latest): Matched Streamlit MSAL authentication inside HTMX (Graph validation, allow-list parity, session cookie) and hardened Container Apps provisioning for idempotent redeploys (Log Analytics `customerId`, RBAC-safe Key Vault set-policy, forced revision updates) with README alignment.
 
 ## What Works
 
@@ -23,6 +25,7 @@
 - Progress feedback & cost estimation (now includes reasoning token component for reasoning models)
 - Key Vault + DefaultAzureCredential (supports managed identity / keyless)
 - Download packaging (ZIP of both assessments)
+- Dual UI surfaces (Streamlit & HTMX/FastAPI) sharing the same business logic and allow-list enforcement
 - Optional prompt compression (llmlingua v2) for cost reduction
 
 ## What's Left to Build
@@ -52,7 +55,7 @@ Prototype / advanced MVP. Functional for internal controlled users; not producti
 | JSON Drift | Model typos (e.g., `inteduse`) require ad-hoc fixes | Fragile parsing | Implement schema validation & normalization layer |
 | Caching | Pickle file not concurrency-safe | Race conditions in multi-instance | Migrate to Redis / Blob ETag guarded writes |
 | Logging | Unstructured blob append | Hard to query / alert | Adopt JSON structured logs + Log Analytics |
-| Security | User allow-list logic minimal | Unauthorized use risk if misconfigured | Enforce signed-in principal + RBAC roles |
+| Security | User allow-list logic minimal | Unauthorized use risk if misconfigured | Enforce signed-in principal + RBAC roles (dev bypass now opt-in & localhost-only) |
 | Cost Accuracy | Static pricing table may age | Misreported economics | Periodic sync or dynamic pricing fetch |
 | Reasoning Cost Transparency | Reasoning tokens previously invisible | Underestimated cost | Included; need UI surfacing |
 | Reasoning Extraction Depth | Current summary heuristic only | Limited insight / debugging | Planned deeper structured extraction + safe redaction |
