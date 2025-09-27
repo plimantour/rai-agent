@@ -17,6 +17,8 @@
  - Generation flow initializes session progress buffers before template updates and only raises errors on genuine failures.
  - HTMX polling trigger rewritten to check `this.dataset.progressActive` so client-side console errors no longer fire on load.
  - Analysis & generation now run in a thread pool to keep `/progress` polling and toast delivery responsive during long-running operations.
+ - Toast notifications listen on document-level HX triggers so progress toasts surface during execution, and the progress panel hides automatically once a run completes.
+ - Progress collector sanitizes incoming messages to reject HTML/control characters before they reach the UI.
 
 ## 2025-09-25
 ### Changed

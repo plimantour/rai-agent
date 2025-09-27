@@ -441,15 +441,37 @@ def register_access(session: SessionState, user: UserContext) -> None:
 
 
 class ProgressCollector:
+    _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+    _HTML_TAG_RE = re.compile(r"<[^>]+>")
+
     def __init__(self, sink: Optional[Callable[[str], None]] = None) -> None:
         self.messages: List[str] = []
         self._sink = sink
 
+    def _sanitize_message(self, msg: object) -> Optional[str]:
+        if msg is None:
+            return None
+        if not isinstance(msg, str):
+            msg = str(msg)
+        candidate = msg.strip()
+        if not candidate:
+            return None
+        if self._CONTROL_CHARS_RE.search(candidate):
+            log.warning("Discarding progress message containing control characters")
+            return None
+        if self._HTML_TAG_RE.search(candidate):
+            log.warning("Discarding progress message containing HTML/XML tags")
+            return None
+        return candidate
+
     def hook(self, msg: str) -> None:
-        self.messages.append(msg)
+        sanitized = self._sanitize_message(msg)
+        if sanitized is None:
+            return
+        self.messages.append(sanitized)
         if self._sink:
             try:
-                self._sink(msg)
+                self._sink(sanitized)
             except Exception as exc:
                 log.debug("Progress sink error: %s", exc)
 
@@ -1002,6 +1024,8 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
         reasoning_summary=reasoning_summary,
     )
     session.progress_active = False
+    session.live_progress = []
+    session.progress_pending_toasts = []
     session.messages.append("Solution description analyzed successfully.")
     session.messages.extend(toast_messages)
     response = render_dashboard(request, session, user, partial=True)
@@ -1092,6 +1116,8 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         )
     except Exception as exc:
         session.progress_active = False
+        session.live_progress = []
+        session.progress_pending_toasts = []
         log.exception("Generation failed")
         remove_file_safe(str(internal_path))
         remove_file_safe(str(public_path))
@@ -1133,6 +1159,8 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         steps=formatted_steps,
     )
     session.progress_active = False
+    session.live_progress = []
+    session.progress_pending_toasts = []
     toast_messages = [item.get("heading", "") for item in formatted_steps if item.get("heading")]
     session.messages.append(message)
     session.messages.extend(toast_messages)

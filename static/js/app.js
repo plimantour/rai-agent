@@ -30,6 +30,18 @@
         }, 5000);
     }
 
+    function emitToastMessages(payload) {
+        if (!payload) {
+            return;
+        }
+        const messages = Array.isArray(payload) ? payload : [payload];
+        messages
+            .map((msg) => (typeof msg === "string" ? msg : String(msg)))
+            .map((msg) => msg.trim())
+            .filter((msg) => msg.length > 0)
+            .forEach((msg) => showToast(msg));
+    }
+
     function consumeToastPayloads(root) {
         const scope = root || document;
         const payloads = scope.querySelectorAll?.(".toast-payload");
@@ -43,9 +55,7 @@
                     return;
                 }
                 const parsed = JSON.parse(data);
-                if (Array.isArray(parsed)) {
-                    parsed.forEach((msg) => showToast(msg));
-                }
+                emitToastMessages(parsed);
             } catch (err) {
                 console.warn("Failed to parse toast payload", err);
             } finally {
@@ -240,13 +250,11 @@
     function setupEventHandlers() {
         syncInitialTheme();
         setupUploadForm(document);
-        window.addEventListener("show-toasts", (event) => {
-            const messages = event.detail;
-            if (!messages || !Array.isArray(messages)) {
-                return;
-            }
-            messages.forEach((msg) => showToast(msg));
-        });
+        const handleToastEvent = (event) => {
+            emitToastMessages(event?.detail);
+        };
+
+        document.addEventListener("show-toasts", handleToastEvent);
 
         document.body?.addEventListener("htmx:beforeRequest", (evt) => {
             const path = evt.detail?.requestConfig?.path || evt.detail?.pathInfo?.path;
@@ -273,27 +281,35 @@
         });
 
         document.body?.addEventListener("htmx:afterSwap", (evt) => {
-            if (evt.detail?.target) {
-                consumeToastPayloads(evt.detail.target);
+            const target = evt.detail?.target || null;
+            if (target) {
+                consumeToastPayloads(target);
             }
-            setupUploadForm(evt.detail?.target || document);
+            const syncToastPayloads = () => consumeToastPayloads(document);
+            if (typeof queueMicrotask === "function") {
+                queueMicrotask(syncToastPayloads);
+            } else {
+                setTimeout(syncToastPayloads, 0);
+            }
+            setupUploadForm(target || document);
             const xhr = evt.detail?.xhr;
-            if (!xhr) {
-                return;
-            }
-            const triggerHeader = xhr.getResponseHeader("HX-Trigger");
-            const payload = parseHxTriggerHeader(triggerHeader);
-            if (!payload) {
-                return;
-            }
-            if (payload["theme-changed"]) {
-                const theme = payload["theme-changed"].theme;
-                if (theme === "light" || theme === "dark") {
-                    handleThemeChange(theme);
+            if (xhr) {
+                const triggerHeader = xhr.getResponseHeader("HX-Trigger");
+                const payload = parseHxTriggerHeader(triggerHeader);
+                if (payload) {
+                    if (payload["theme-changed"]) {
+                        const theme = payload["theme-changed"].theme;
+                        if (theme === "light" || theme === "dark") {
+                            handleThemeChange(theme);
+                        }
+                    }
+                    if (payload["show-toasts"]) {
+                        emitToastMessages(payload["show-toasts"]);
+                    }
                 }
             }
-            if (evt.detail?.target?.id === "settings-modal-body") {
-                focusFirstInteractive(evt.detail.target);
+            if (target?.id === "settings-modal-body") {
+                focusFirstInteractive(target);
             }
         });
 

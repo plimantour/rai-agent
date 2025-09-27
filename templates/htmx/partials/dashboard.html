@@ -74,20 +74,22 @@
         {% if generation_result.steps %}
         <div class="progress-steps">
             <h4>Processing steps</h4>
-            <ol>
+            <div class="progress-list">
             {% for step in generation_result.steps %}
                 {% if step.heading is defined %}
-                <li>
+                <div class="progress-item">
                     <span class="step-heading">{{ step.heading }}</span>
                     {% if step.subtext %}
                     <p class="muted small step-detail">{{ step.subtext }}</p>
                     {% endif %}
-                </li>
+                </div>
                 {% else %}
-                <li>{{ step }}</li>
+                <div class="progress-item">
+                    <span class="step-heading">{{ step }}</span>
+                </div>
                 {% endif %}
             {% endfor %}
-            </ol>
+            </div>
         </div>
         {% endif %}
         <div class="button-row">

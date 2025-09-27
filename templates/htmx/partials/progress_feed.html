@@ -1,5 +1,5 @@
 <div id="live-progress"
-     class="progress-feed"
+    class="progress-feed{% if not progress_active and not progress_messages %} is-hidden{% endif %}"
      data-progress-active="{{ 'true' if progress_active else 'false' }}"
      hx-get="/progress"
     hx-target="this"
@@ -9,20 +9,22 @@
     {% if progress_messages %}
     <div class="progress-panel">
         <h4>Live processing</h4>
-        <ol>
+        <div class="progress-list">
         {% for step in progress_messages %}
             {% if step.heading is defined %}
-            <li>
+            <div class="progress-item">
                 <span class="step-heading">{{ step.heading }}</span>
                 {% if step.subtext %}
                 <p class="muted small step-detail">{{ step.subtext }}</p>
                 {% endif %}
-            </li>
+            </div>
             {% else %}
-            <li>{{ step }}</li>
+            <div class="progress-item">
+                <span class="step-heading">{{ step }}</span>
+            </div>
             {% endif %}
         {% endfor %}
-        </ol>
+        </div>
     </div>
     {% elif progress_active %}
     <div class="progress-panel">

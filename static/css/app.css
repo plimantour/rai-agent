@@ -302,23 +302,28 @@ body.theme-dark .result .scrollable {
     font-size: 0.95rem;
 }
 
-.progress-steps ol {
+.progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
     margin: 0;
-    padding-left: 1.25rem;
+}
+
+.progress-item {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
 }
 
-.progress-steps .step-heading {
-    font-weight: 500;
+.progress-item .step-heading {
+    font-weight: 600;
     display: block;
 }
 
-.progress-steps .step-detail {
-    margin: 0.25rem 0 0;
-    padding-left: 1rem;
+.progress-item .step-detail {
+    margin: 0;
     line-height: 1.4;
+    padding-left: 0.75rem;
 }
 
 .progress-feed {
@@ -332,12 +337,12 @@ body.theme-dark .result .scrollable {
     padding: 0.75rem 1rem;
 }
 
-.progress-feed ol {
-    margin: 0;
-    padding-left: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+.progress-feed.is-hidden {
+    display: none;
+}
+
+.progress-feed .progress-list {
+    margin-top: 0.5rem;
 }
 
 body.theme-dark .panel {
@@ -355,7 +360,7 @@ body.theme-dark .progress-steps {
     border-color: rgba(148, 163, 184, 0.3);
 }
 
-body.theme-dark .progress-steps .step-detail {
+body.theme-dark .progress-item .step-detail {
     color: #94a3b8;
 }
 
