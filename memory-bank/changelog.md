@@ -2,6 +2,22 @@
 
 # Changelog
 
+## 2025-09-27
+### Added
+- HTMX dashboard progress feed partial with `/progress` polling so in-flight `ui_hook` messages surface in real time (step list + toast queue).
+ - Progress sink wiring for `/generate` so draft creation emits live updates and toasts like analysis.
+ - Docker build arg `STATIC_ASSET_VERSION` to stamp static asset URLs per image build.
+
+### Fixed
+- Generation failures now roll back partial outputs and re-render the dashboard with a toast message instead of returning HTTP 500 errors.
+
+### Changed
+- Dashboard templates and CSS updated to embed the live progress panel and companion styling while versioning static assets to bust browser caches on deploy.
+- Session state now tracks `live_progress` payloads and pending toast batches, ensuring the poller drains state safely before deactivating.
+ - Generation flow initializes session progress buffers before template updates and only raises errors on genuine failures.
+ - HTMX polling trigger rewritten to check `this.dataset.progressActive` so client-side console errors no longer fire on load.
+ - Analysis & generation now run in a thread pool to keep `/progress` polling and toast delivery responsive during long-running operations.
+
 ## 2025-09-25
 ### Changed
 - README reasoning-summary section updated to document the Azure OpenAI client migration and clarified fallback behaviour.

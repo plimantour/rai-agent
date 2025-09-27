@@ -1,0 +1,87 @@
+<div id="settings-modal-body" class="modal-content">
+    <section class="modal-section">
+        <p class="muted">Updates save automatically for your account and reload the next time you sign in. Refresh or reopen the page to pick up changes across devices.</p>
+    </section>
+
+    <section class="modal-section">
+        <h3>General</h3>
+        <form class="settings-form" hx-post="/options/general" hx-trigger="change delay:200ms" hx-target="#settings-modal-body" hx-swap="outerHTML">
+            <div class="option-item">
+                <label class="toggle-label" for="use_cache">
+                    <input type="checkbox" id="use_cache" name="use_cache" value="1" {% if session.use_cache %}checked{% endif %}>
+                    <span>Use cached answers</span>
+                </label>
+                <p class="muted small">Reuse cached LLM results to reduce latency and cost.</p>
+            </div>
+            <div class="option-item">
+                <label class="toggle-label" for="use_prompt_compression">
+                    <input type="checkbox" id="use_prompt_compression" name="use_prompt_compression" value="1" {% if session.use_prompt_compression %}checked{% endif %}>
+                    <span>Enable prompt compression</span>
+                </label>
+                <p class="muted small">Compress prompts with llmlingua before sending to the model.</p>
+            </div>
+            {% if session.show_reasoning_summary is not none %}
+            <div class="option-item">
+                <label class="toggle-label" for="show_reasoning_summary">
+                    <input type="checkbox" id="show_reasoning_summary" name="show_reasoning_summary" value="1" {% if session.show_reasoning_summary %}checked{% endif %}>
+                    <span>Show reasoning summary</span>
+                </label>
+                <p class="muted small">Display condensed reasoning output when a model supplies it.</p>
+            </div>
+            {% endif %}
+        </form>
+    </section>
+
+    {% if user.is_admin %}
+    <section class="modal-section">
+        <h3>Admin controls</h3>
+        <form class="settings-form stack" hx-post="/options/model" hx-trigger="change delay:200ms" hx-target="#settings-modal-body" hx-swap="outerHTML">
+            <label for="selected_model">Model</label>
+            <select id="selected_model" name="selected_model">
+                {% for option in model_options %}
+                <option value="{{ option.name }}" {% if option.name == session.selected_model %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+            </select>
+            <label for="reasoning_level">Reasoning effort</label>
+            <select id="reasoning_level" name="reasoning_level">
+                {% for value in session.reasoning_levels %}
+                <option value="{{ value }}" {% if value == session.reasoning_level %}selected{% endif %}>{{ value.title() }}</option>
+                {% endfor %}
+            </select>
+            <label for="reasoning_verbosity">Reasoning verbosity</label>
+            <select id="reasoning_verbosity" name="reasoning_verbosity">
+                {% for value in ["low", "medium", "high"] %}
+                <option value="{{ value }}" {% if value == session.reasoning_verbosity %}selected{% endif %}>{{ value.title() }}</option>
+                {% endfor %}
+            </select>
+            <label for="log_level">Log level</label>
+            <select id="log_level" name="log_level">
+                {% for value in ["None", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}
+                <option value="{{ value }}" {% if value == session.log_level %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <div class="admin-tools">
+            <div class="button-row">
+                <a class="button secondary" href="/admin/download/logs" hx-boost="false">Download access logs</a>
+                {% if admin_downloads.system_logs %}
+                <a class="button secondary" href="/admin/download/system" hx-boost="false">Download system logs</a>
+                {% endif %}
+                <form method="post" action="/admin/cache/clear" hx-post="/admin/cache/clear" hx-target="#settings-modal-body" hx-swap="outerHTML" class="inline">
+                    <button type="submit" class="button danger">Clear cache</button>
+                </form>
+            </div>
+            <p class="muted small">Administrative actions take effect immediately and are logged.</p>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="modal-section">
+        <h3>Appearance</h3>
+        {% include "htmx/partials/theme_toggle.html" %}
+    </section>
+
+    <div class="modal-footer">
+        <button type="button" class="button secondary" data-modal-close>Close</button>
+    </div>
+</div>

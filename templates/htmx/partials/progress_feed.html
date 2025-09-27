@@ -1,0 +1,35 @@
+<div id="live-progress"
+     class="progress-feed"
+     data-progress-active="{{ 'true' if progress_active else 'false' }}"
+     hx-get="/progress"
+    hx-target="this"
+    hx-trigger="load delay:500ms, every 2s [this.dataset.progressActive === 'true']"
+     hx-vals='{"version": "{{ progress_version }}"}'
+     hx-swap="outerHTML">
+    {% if progress_messages %}
+    <div class="progress-panel">
+        <h4>Live processing</h4>
+        <ol>
+        {% for step in progress_messages %}
+            {% if step.heading is defined %}
+            <li>
+                <span class="step-heading">{{ step.heading }}</span>
+                {% if step.subtext %}
+                <p class="muted small step-detail">{{ step.subtext }}</p>
+                {% endif %}
+            </li>
+            {% else %}
+            <li>{{ step }}</li>
+            {% endif %}
+        {% endfor %}
+        </ol>
+    </div>
+    {% elif progress_active %}
+    <div class="progress-panel">
+        <h4>Live processing</h4>
+        <p class="muted small">Preparing to generate…</p>
+    </div>
+    {% else %}
+    <!-- No active progress -->
+    {% endif %}
+</div>

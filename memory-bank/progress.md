@@ -13,7 +13,9 @@
 - Sep 2025 (late): Removed `max_completion_tokens` cap for reasoning models (allow long outputs); added dynamic log level UI, raw response & empty-answer diagnostics, noisy logger suppression, Responses API reasoning summaries, single-click timestamped system logs download.
 - Sep 2025 (latest): Switched to `AzureOpenAI` SDK client to keep Responses API calls on deployment endpoints (fixing 404 fallbacks) and ensured rotating file handler captures DEBUG traces regardless of console level.
 - Sep 2025 (current): Delivered HTMX + FastAPI UI alternative (`htmx_ui_main.py`) with shared templates/static assets while tightening local dev auth bypass (explicit `HTMX_ALLOW_DEV_BYPASS` + localhost restriction) and documenting dual-launch workflows.
-- Sep 2025 (latest): Matched Streamlit MSAL authentication inside HTMX (Graph validation, allow-list parity, session cookie) and hardened Container Apps provisioning for idempotent redeploys (Log Analytics `customerId`, RBAC-safe Key Vault set-policy, forced revision updates) with README alignment.
+- 2025-09-26: Matched Streamlit MSAL authentication inside HTMX (Graph validation, allow-list parity, session cookie) and hardened Container Apps provisioning for idempotent redeploys (Log Analytics `customerId`, RBAC-safe Key Vault set-policy, forced revision updates) with README alignment.
+- 2025-09-27: Implemented HTMX live progress polling (`/progress`) with session-backed queues for incremental `ui_hook` updates, real-time toast delivery, and cache-busted static assets ensuring freshly deployed CSS/JS loads without manual refresh.
+- 2025-09-27: Implemented HTMX live progress polling (`/progress`) with session-backed queues for incremental `ui_hook` updates, real-time toast delivery, and cache-busted static assets ensuring freshly deployed CSS/JS loads without manual refresh. Generation path now mirrors analysis (progress sink, toast queue, graceful failure handling), the poller condition was corrected to a dataset comparison to stop HTMX syntax errors, and Docker builds inject `STATIC_ASSET_VERSION` for deterministic cache busting.
 
 ## What Works
 
@@ -25,7 +27,7 @@
 - Progress feedback & cost estimation (now includes reasoning token component for reasoning models)
 - Key Vault + DefaultAzureCredential (supports managed identity / keyless)
 - Download packaging (ZIP of both assessments)
-- Dual UI surfaces (Streamlit & HTMX/FastAPI) sharing the same business logic and allow-list enforcement
+- Dual UI surfaces (Streamlit & HTMX/FastAPI) sharing the same business logic and allow-list enforcement, now with live progress feed + toast queue in the HTMX experience
 - Optional prompt compression (llmlingua v2) for cost reduction
 
 ## What's Left to Build

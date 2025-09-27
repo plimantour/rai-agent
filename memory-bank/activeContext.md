@@ -13,6 +13,8 @@ Initialize structured project knowledge for the RAI Assessment automation tool. 
 
 ## Recent Changes
 
+- Added HTMX live progress streaming: session-backed `/progress` poller surfaces ongoing `ui_hook` events, drives real-time step list updates, and dispatches queued toasts while auto-disabling once complete. Long-running analysis & generation now execute in a thread pool so the poller stays responsive, and the generation route mirrors analysis by wiring progress sinks before invocation, cleaning up state on errors, and returning a graceful dashboard refresh instead of surfacing 500s when failures occur (polling conditions now use dataset checks to avoid HTMX syntax issues).
+- Introduced cache-busted static assets (versioned URLs) and dedicated progress feed partial/CSS so UI refreshes immediately after deploys without manual hard refresh. Docker build now injects `STATIC_ASSET_VERSION` so each image carries a deterministic cache-busting token.
 - Introduced a parallel HTMX + FastAPI UI (`htmx_ui_main.py`) with shared templates/static assets to mirror the Streamlit experience; users can launch either interface interchangeably.
 - Implemented an MSAL login flow for the HTMX UI that mirrors Streamlit authentication (Graph `User.Read` validation, allow-list enforcement, cookie-backed session caching, consistent messaging), with shared templates and README guidance.
 - Hardened the local development auth bypass to require `HTMX_ALLOW_DEV_BYPASS` opt-in and restrict usage to localhost, with documentation updates describing safe setup.

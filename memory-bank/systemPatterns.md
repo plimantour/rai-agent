@@ -3,14 +3,14 @@
 ## System Architecture
 
 High-Level Layers:
-1. Ingestion Layer: CLI (`main.py`) & Streamlit UI (`streamlit_ui_main.py`)
+1. Ingestion Layer: CLI (`main.py`), Streamlit UI (`streamlit_ui_main.py`), and HTMX/FastAPI UI (`htmx_ui_main.py`)
 2. Orchestration & Prompt Pipeline: `prompts/prompts_engineering_llmlingua.py`
 3. Processing Utilities: document mutation (`helpers/docs_utils.py`), caching (`helpers/cache_completions.py`), pricing (`helpers/completion_pricing.py`), auth/session (`helpers/user_auth.py`), blob/keyvault integration (`helpers/blob_cache.py`)
 4. Persistence / External Services: Azure OpenAI / Mistral (LLM), Azure Key Vault (secrets + config), Azure Blob (logs & allow‑list), Local FS (cache, outputs)
-5. Presentation: Streamlit reactive components (progress, download, parameter toggles)
+5. Presentation: Streamlit reactive components (progress, download, parameter toggles) plus HTMX partials with polling-driven progress feed, toast queue, and shared static assets
 
 Data Flow (UI path):
-Upload DOCX → Extract raw text → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Log user actions & usage.
+Upload DOCX → Extract raw text → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
 
 ## Key Technical Decisions
 

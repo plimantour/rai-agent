@@ -380,6 +380,10 @@ def initialize_ai_models():
     try:
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider  # type: ignore
         from azure.keyvault.secrets import SecretClient  # type: ignore
+        try:  # azure-core ships with azure-identity; guard defensively in case of partial installs
+            from azure.core.exceptions import HttpResponseError  # type: ignore
+        except ImportError:  # pragma: no cover - fall back to generic Exception grouping
+            HttpResponseError = Exception  # type: ignore
     except ImportError as az_e:  # pragma: no cover - clear message for operators
         log.error("Azure SDK modules missing: %s. Install azure-identity and azure-keyvault-secrets.", az_e)
         raise
@@ -396,10 +400,13 @@ def initialize_ai_models():
 
     print(colored("Using Azure Entra ID", "cyan"))
 
+    def _env_flag(name: str) -> bool:
+        return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
     # Specify the Azure Key Vault URL
     key_vault_url = os.getenv("AZURE_KEYVAULT_URL", None)
-    if os.getenv("SKIP_KEYVAULT_FOR_TESTS", "").lower() in ("1","true","yes"):  # Facilitate local/unit tests without Key Vault network access
-        log.info("[init] SKIP_KEYVAULT_FOR_TESTS active – bypassing Key Vault secret retrieval")
+    if _env_flag("SKIP_KEYVAULT_FOR_TESTS") or _env_flag("HTMX_ALLOW_DEV_BYPASS"):
+        log.info("[init] Local/dev mode detected – skipping Key Vault secret retrieval")
         key_vault_url = None
 
     azure_ad_token_provider = get_bearer_token_provider(credential, "https://cognitiveservices.azure.com/.default")
@@ -411,77 +418,79 @@ def initialize_ai_models():
     # Check if the key vault URL is set
     api_type = (os.getenv("AZURE_OPENAI_API_TYPE", "azure") or "azure").lower()
 
+    completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT") or os.getenv("AZURE_OPENAI_DEFAULT_MODEL", "gpt-4o")
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("AZURE_OPENAI_DEFAULT_API_VERSION", "2024-02-15-preview")
+
+    azure_endpoint = None
+    mistral_url = None
+    mistral_key = None
+    used_keyvault_for_azure = False
+    used_keyvault_for_mistral = False
+
     if key_vault_url:
+        try:
+            secret_client = SecretClient(vault_url=key_vault_url, credential=credential)
+            if api_type == 'azure':
+                azure_endpoint = secret_client.get_secret('AZURE-OPENAI-ENDPOINT').value
+                used_keyvault_for_azure = True
+                print(colored("Using an Azure key vault (Azure OpenAI endpoint).", "cyan"))
+            else:
+                mistral_url = secret_client.get_secret('MISTRAL-OPENAI-ENDPOINT').value
+                mistral_key = secret_client.get_secret('MISTRAL-OPENAI-API-KEY').value
+                used_keyvault_for_mistral = True
+                print(colored("Using an Azure key vault (Mistral endpoint).", "cyan"))
+        except HttpResponseError as exc:
+            log.warning("Key Vault access failed (%s). Falling back to environment variables for OpenAI configuration.", exc)
+            key_vault_url = None
+        except Exception as exc:  # pragma: no cover - capture unexpected retrieval errors and continue with env vars
+            log.warning("Unexpected Key Vault error; falling back to environment variables: %s", exc, exc_info=True)
+            key_vault_url = None
 
-        # key_vault_url = "https://your-key-vault-name.vault.azure.net"
+    if api_type == 'azure':
+        try:
+            from openai import AzureOpenAI  # type: ignore
+        except ImportError as exc:  # pragma: no cover
+            log.error("AzureOpenAI client unavailable: %s", exc)
+            raise
 
-        # Create a SecretClient object
-        secret_client = SecretClient(vault_url=key_vault_url, credential=credential)
+        azure_endpoint = azure_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+        if not azure_endpoint:
+            raise RuntimeError("Azure OpenAI endpoint not configured. Set AZURE_OPENAI_ENDPOINT or configure Key Vault.")
 
-        print(colored("Using an Azure key vault...", "cyan"))
+        openai = AzureOpenAI(
+            azure_endpoint=azure_endpoint,
+            azure_ad_token_provider=azure_ad_token_provider,
+            api_version=api_version,
+        )
 
-        # Retrieve the openai secrets from the key vault
-        if api_type == 'azure':
-            try:
-                from openai import AzureOpenAI  # type: ignore
-            except ImportError as exc:  # pragma: no cover
-                log.error("AzureOpenAI client unavailable: %s", exc)
-                raise
-
-            azure_endpoint = secret_client.get_secret('AZURE-OPENAI-ENDPOINT').value
-            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-            completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
-            openai = AzureOpenAI(
-                azure_endpoint=azure_endpoint,
-                azure_ad_token_provider=azure_ad_token_provider,
-                api_version=api_version,
-            )
-            # Maintain legacy attributes for downstream checks/logging
-            openai.api_type = 'azure'  # type: ignore[attr-defined]
-            openai.azure_endpoint = azure_endpoint  # type: ignore[attr-defined]
-            openai.api_version = api_version  # type: ignore[attr-defined]
-            openai.azure_ad_token_provider = azure_ad_token_provider  # type: ignore[attr-defined]
-            print(f'Using Azure OpenAI API with model {completion_model}\n')
-            print(f'keyless - azure_endpoint {azure_endpoint}\n')
-        else:
-            from openai import OpenAI
-            mistral_url = secret_client.get_secret('MISTRAL-OPENAI-ENDPOINT').value
-            mistral_key = secret_client.get_secret('MISTRAL-OPENAI-API-KEY').value
-            mistral = OpenAI(base_url=mistral_url, api_key=mistral_key)
-            completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
-            setattr(openai, "api_type", api_type)
-
-    # If the key vault URL is not set, use the environment variables
+        mistral = None
+        openai.api_type = 'azure'  # type: ignore[attr-defined]
+        openai.azure_endpoint = azure_endpoint  # type: ignore[attr-defined]
+        openai.api_version = api_version  # type: ignore[attr-defined]
+        openai.azure_ad_token_provider = azure_ad_token_provider  # type: ignore[attr-defined]
+        source_label = "Azure Key Vault" if used_keyvault_for_azure else "environment variables"
+        print(f'Using Azure OpenAI API with model {completion_model} ({source_label})\n')
+        print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
     else:
-        if api_type == 'azure':
-            try:
-                from openai import AzureOpenAI  # type: ignore
-            except ImportError as exc:  # pragma: no cover
-                log.error("AzureOpenAI client unavailable: %s", exc)
-                raise
+        try:
+            from openai import OpenAI  # type: ignore
+        except ImportError as exc:  # pragma: no cover
+            log.error("OpenAI client unavailable for non-Azure path: %s", exc)
+            raise
 
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-            completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
-            openai = AzureOpenAI(
-                azure_endpoint=azure_endpoint,
-                azure_ad_token_provider=azure_ad_token_provider,
-                api_version=api_version,
-            )
-            openai.api_type = 'azure'  # type: ignore[attr-defined]
-            openai.azure_endpoint = azure_endpoint  # type: ignore[attr-defined]
-            openai.api_version = api_version  # type: ignore[attr-defined]
-            openai.azure_ad_token_provider = azure_ad_token_provider  # type: ignore[attr-defined]
-            print(f'Using Azure OpenAI API with model {completion_model}\n')
-            print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
-        else:
-            from openai import OpenAI
-            mistral_url = os.getenv("AZURE_OPENAI_ENDPOINT")
-            mistral_key = os.getenv("AZURE_OPENAI_API_KEY") 
-            mistral = OpenAI(base_url=mistral_url, api_key=mistral_key)
-            completion_model = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT")
-            print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
-            setattr(openai, "api_type", api_type)
+        mistral_url = mistral_url or os.getenv("MISTRAL_OPENAI_ENDPOINT") or os.getenv("AZURE_OPENAI_ENDPOINT")
+        mistral_key = mistral_key or os.getenv("MISTRAL_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+        if not mistral_url:
+            raise RuntimeError("Mistral endpoint not configured. Set MISTRAL_OPENAI_ENDPOINT or configure Key Vault.")
+        if not mistral_key:
+            raise RuntimeError("Mistral API key not configured. Set MISTRAL_OPENAI_API_KEY or configure Key Vault.")
+
+        mistral = OpenAI(base_url=mistral_url, api_key=mistral_key)
+        openai = mistral
+        source_label = "Azure Key Vault" if used_keyvault_for_mistral else "environment variables"
+        print(f'Using Mistral endpoint with configuration from {source_label}\n')
+        print(f'Calling Azure with {"Mistral Large" if completion_model == "azureai" else completion_model} model\n')
+        setattr(openai, "api_type", api_type)  # type: ignore[attr-defined]
 
     # Set up a llmlingua 2 Prompt Compressor
     llm_lingua = PromptCompressor(

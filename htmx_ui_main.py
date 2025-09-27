@@ -23,16 +23,19 @@ import uuid
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import markdown
 import requests
 from fastapi import (BackgroundTasks, FastAPI, File,
                      HTTPException, Request, UploadFile)
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse, JSONResponse
+from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse,
+                               StreamingResponse, JSONResponse,
+                               RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from helpers.blob_cache import append_log_to_blob, get_from_keyvault, read_logs_blob_content
 from helpers.docs_utils import (extract_text_from_input, generate_unique_identifier,
@@ -56,6 +59,7 @@ app = FastAPI(title="RAI Assessment Copilot (HTMX Edition)")
 BASE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+STATIC_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(time.time())))
 
 # ---------------------------------------------------------------------------
 # Session & user management
@@ -87,6 +91,7 @@ class GenerationResult:
     cost: Optional[float] = None
     message: str = ""
     reasoning_summary: Optional[str] = None
+    steps: List[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -98,12 +103,21 @@ class SessionState:
     reasoning_level: str = "medium"
     reasoning_verbosity: str = "low"
     log_level: str = "None"
+    theme: str = "dark"
     analysis_result: Optional[AnalysisResult] = None
     generation_result: Optional[GenerationResult] = None
     messages: List[str] = field(default_factory=list)
+    live_progress: List[str] = field(default_factory=list)
+    progress_pending_toasts: List[str] = field(default_factory=list)
+    progress_version: str = ""
+    progress_active: bool = False
+    stored_solution_text: Optional[str] = None
+    stored_solution_filename: Optional[str] = None
     user_info: str = ""
     has_logged_access: bool = False
     cached_user: Optional['UserContext'] = None
+    settings_loaded: bool = False
+    settings_restored: bool = False
 
     @property
     def reasoning_levels(self) -> List[str]:
@@ -133,6 +147,9 @@ ADMIN_USERS = [name.strip() for name in os.getenv(
     "Philippe Limantour;Philippe Limantour (NTO/NSO);Philippe Beraud"
 ).split(";") if name.strip()]
 
+SETTINGS_DIR = BASE_DIR / "user-settings"
+SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 class LoginRequest(BaseModel):
     accessToken: str
@@ -147,6 +164,14 @@ def ensure_session(request: Request) -> Tuple[str, SessionState, bool]:
             SESSION_STORE[session_id] = SessionState()
             created = True
         session = SESSION_STORE[session_id]
+        if not hasattr(session, "theme"):
+            session.theme = "dark"
+        if not hasattr(session, "stored_solution_text"):
+            session.stored_solution_text = None
+            session.stored_solution_filename = None
+        if not hasattr(session, "settings_loaded"):
+            session.settings_loaded = False
+            session.settings_restored = False
     return session_id, session, created
 
 
@@ -177,15 +202,23 @@ def load_allow_list() -> List[str]:
     if cached and now - ALLOW_LIST_CACHE["timestamp"] < ALLOW_LIST_TTL:
         return list(cached)
     entries: List[str] = []
-    try:
-        result = get_from_keyvault(['RAI-ASSESSMENT-USERS'])
-        if result and 'RAI-ASSESSMENT-USERS' in result:
-            entries = [item.strip() for item in result['RAI-ASSESSMENT-USERS'].split(';') if item.strip()]
-    except Exception as exc:
-        log.warning("Unable to retrieve allow list from Key Vault: %s", exc)
+    skip_kv_allow_list = (
+        os.getenv("SKIP_KEYVAULT_FOR_TESTS", "").lower() in ("1", "true", "yes")
+        or _env_bool("HTMX_ALLOW_DEV_BYPASS", False)
+    )
+    if not skip_kv_allow_list:
+        try:
+            result = get_from_keyvault(['RAI-ASSESSMENT-USERS'])
+            if result and 'RAI-ASSESSMENT-USERS' in result:
+                entries = [item.strip() for item in result['RAI-ASSESSMENT-USERS'].split(';') if item.strip()]
+        except Exception as exc:
+            log.warning("Unable to retrieve allow list from Key Vault: %s", exc)
+    else:
+        log.info("HTMX dev/test mode active – skipping Key Vault allow list fetch and using fallback values")
     if not entries:
         fallback = os.getenv("HTMX_FALLBACK_ALLOW_LIST", "")
-        entries = [item.strip() for item in fallback.split(';') if item.strip()]
+        if fallback:
+            entries = [item.strip() for item in re.split(r"[;,]", fallback) if item.strip()]
     ALLOW_LIST_CACHE["value"] = set(entries)
     ALLOW_LIST_CACHE["timestamp"] = now
     return entries
@@ -224,7 +257,13 @@ async def resolve_user(request: Request, session: SessionState) -> UserContext:
 
     allow_list = load_allow_list()
     authorized = display_name in allow_list or preferred_username in allow_list or user_id in allow_list
+    if allow_dev_bypass and is_local_request and not authorized:
+        log.info("Granting local dev bypass access for %s", preferred_username or display_name or user_id)
+        authorized = True
     is_admin = display_name in ADMIN_USERS
+    if allow_dev_bypass and is_local_request and not is_admin:
+        if _env_bool("HTMX_DEV_IS_ADMIN", False):
+            is_admin = True
     user = UserContext(
         user_id=user_id,
         display_name=display_name,
@@ -306,9 +345,64 @@ def render_dashboard(request: Request, session: SessionState, user: UserContext,
             "system_logs": bool(collect_system_log_files()),
         },
         "current_year": time.gmtime().tm_year,
+        "has_upload": bool(session.stored_solution_text),
+        "session_theme": getattr(session, "theme", "dark"),
+        "static_version": STATIC_VERSION,
+        "progress_version": session.progress_version,
+        "live_progress": format_progress_messages(session.live_progress),
+        "progress_active": session.progress_active,
     }
     template_name = "htmx/partials/dashboard.html" if partial else "htmx/index.html"
     return TEMPLATES.TemplateResponse(template_name, context)
+
+
+def render_settings_modal(request: Request, session: SessionState, user: UserContext) -> HTMLResponse:
+    context = {
+        "request": request,
+        "session": session,
+        "user": user,
+        "model_options": model_options_for_template(session.selected_model),
+        "admin_downloads": {
+            "system_logs": bool(collect_system_log_files()),
+        },
+        "static_version": STATIC_VERSION,
+    }
+    return TEMPLATES.TemplateResponse("htmx/partials/settings_modal_body.html", context)
+
+
+@app.get("/progress", response_class=HTMLResponse)
+async def poll_progress(request: Request, version: Optional[str] = None):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    active = bool(session.progress_active)
+    if version and version != session.progress_version:
+        # Client is out of sync: reset polling state by clearing delivered toasts.
+        session.progress_pending_toasts.clear()
+
+    context = {
+        "request": request,
+        "session": session,
+        "progress_messages": format_progress_messages(session.live_progress),
+        "progress_version": session.progress_version,
+        "progress_active": active,
+    }
+    response = TEMPLATES.TemplateResponse("htmx/partials/progress_feed.html", context)
+    if session.progress_pending_toasts:
+        pending = list(session.progress_pending_toasts)
+        session.progress_pending_toasts.clear()
+        set_toast_header(response, pending)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
+def set_toast_header(response: HTMLResponse, messages: List[str]) -> None:
+    if not messages:
+        return
+    payload = json.dumps({"show-toasts": messages})
+    response.headers["HX-Trigger"] = payload
 
 
 def render_login(request: Request, session: SessionState) -> HTMLResponse:
@@ -325,6 +419,8 @@ def render_login(request: Request, session: SessionState) -> HTMLResponse:
         "messages": messages,
         "msal_config_json": json.dumps(msal_config),
         "current_year": time.gmtime().tm_year,
+        "session_theme": getattr(session, "theme", "dark"),
+        "static_version": STATIC_VERSION,
     }
     return TEMPLATES.TemplateResponse("htmx/login.html", context)
 
@@ -345,11 +441,17 @@ def register_access(session: SessionState, user: UserContext) -> None:
 
 
 class ProgressCollector:
-    def __init__(self) -> None:
+    def __init__(self, sink: Optional[Callable[[str], None]] = None) -> None:
         self.messages: List[str] = []
+        self._sink = sink
 
     def hook(self, msg: str) -> None:
         self.messages.append(msg)
+        if self._sink:
+            try:
+                self._sink(msg)
+            except Exception as exc:
+                log.debug("Progress sink error: %s", exc)
 
 
 def extract_cost_from_messages(messages: List[str]) -> Optional[float]:
@@ -364,6 +466,31 @@ def extract_cost_from_messages(messages: List[str]) -> Optional[float]:
     return None
 
 
+DETAIL_MESSAGE_PREFIXES: Tuple[str, ...] = (
+    "Analyzing and Processing AI outputs",
+)
+
+
+def format_progress_messages(messages: List[str]) -> List[Dict[str, str]]:
+    formatted: List[Dict[str, str]] = []
+    for msg in messages:
+        if not isinstance(msg, str):
+            continue
+        text = str(msg).strip()
+        if not text:
+            continue
+        normalized = " ".join(text.split())
+        if any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            if formatted:
+                existing_detail = formatted[-1].get("subtext", "")
+                formatted[-1]["subtext"] = f"{existing_detail}\n{normalized}".strip() if existing_detail else normalized
+            else:
+                formatted.append({"heading": normalized, "subtext": ""})
+            continue
+        formatted.append({"heading": normalized, "subtext": ""})
+    return formatted
+
+
 def remove_file_safe(path: str) -> None:
     try:
         if path and os.path.exists(path):
@@ -372,9 +499,112 @@ def remove_file_safe(path: str) -> None:
         log.debug("Failed to remove %s: %s", path, exc)
 
 
+def _set_stored_solution(session: SessionState, filename: str, text: str) -> None:
+    session.stored_solution_text = text
+    session.stored_solution_filename = filename
+
+
+def _stored_solution_root(session: SessionState) -> str:
+    filename = session.stored_solution_filename or ""
+    stem = Path(filename).stem.strip()
+    return stem or "solution_description"
+
+
+def _settings_path_for_user(user: UserContext) -> Optional[Path]:
+    identifier = user.user_id or user.preferred_username or user.display_name
+    if not identifier:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", identifier)
+    return SETTINGS_DIR / f"{safe}.json"
+
+
+def _serialize_session_settings(session: SessionState) -> Dict[str, object]:
+    return {
+        "use_cache": session.use_cache,
+        "use_prompt_compression": session.use_prompt_compression,
+        "show_reasoning_summary": session.show_reasoning_summary,
+        "selected_model": session.selected_model,
+        "reasoning_level": session.reasoning_level,
+        "reasoning_verbosity": session.reasoning_verbosity,
+        "log_level": session.log_level,
+        "theme": session.theme,
+    }
+
+
+def persist_user_settings(session: SessionState, user: UserContext) -> None:
+    path = _settings_path_for_user(user)
+    if not path:
+        return
+    try:
+        data = _serialize_session_settings(session)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+    except Exception as exc:
+        log.debug("Unable to persist user settings: %s", exc)
+
+
+def maybe_restore_user_settings(session: SessionState, user: UserContext) -> None:
+    if session.settings_loaded or not user.authorized:
+        return
+    session.settings_loaded = True
+    path = _settings_path_for_user(user)
+    if not path or not path.exists():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception as exc:
+        log.debug("Unable to load settings for %s: %s", user.user_id, exc)
+        return
+
+    changed = False
+    if isinstance(data, dict):
+        use_cache = data.get("use_cache")
+        if isinstance(use_cache, bool):
+            session.use_cache = use_cache
+            changed = True
+        use_prompt = data.get("use_prompt_compression")
+        if isinstance(use_prompt, bool):
+            session.use_prompt_compression = use_prompt
+            changed = True
+        show_summary = data.get("show_reasoning_summary")
+        if show_summary is None or isinstance(show_summary, bool):
+            session.show_reasoning_summary = show_summary
+            changed = True
+        selected_model = data.get("selected_model")
+        if isinstance(selected_model, str) and selected_model in model_pricing_euros:
+            session.selected_model = selected_model
+            changed = True
+        reasoning_level = data.get("reasoning_level")
+        if isinstance(reasoning_level, str) and reasoning_level in session.reasoning_levels:
+            session.reasoning_level = reasoning_level
+            changed = True
+        reasoning_verbosity = data.get("reasoning_verbosity")
+        if isinstance(reasoning_verbosity, str) and reasoning_verbosity in ("low", "medium", "high"):
+            session.reasoning_verbosity = reasoning_verbosity
+            set_reasoning_verbosity(reasoning_verbosity)
+            changed = True
+        log_level = data.get("log_level")
+        if isinstance(log_level, str) and log_level:
+            session.log_level = log_level
+            if log_level != "None":
+                set_log_level(log_level)
+            changed = True
+        theme = data.get("theme")
+        if isinstance(theme, str) and theme in ("dark", "light"):
+            session.theme = theme
+            changed = True
+
+    if changed and not session.settings_restored:
+        session.messages.append("Your saved settings have been restored.")
+        session.settings_restored = True
+
+
 async def get_session_and_user(request: Request) -> Tuple[str, SessionState, bool, UserContext]:
     session_id, session, created = ensure_session(request)
     user = await resolve_user(request, session)
+    if user.authorized:
+        maybe_restore_user_settings(session, user)
     return session_id, session, created, user
 
 
@@ -445,6 +675,17 @@ async def establish_session(request: Request, payload: LoginRequest):
     return response
 
 
+@app.post("/logout")
+async def logout(request: Request):
+    session_id = request.cookies.get("rai_session")
+    if session_id:
+        with SESSION_LOCK:
+            SESSION_STORE.pop(session_id, None)
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie("rai_session", httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     session_id, session, created, user = await get_session_and_user(request)
@@ -457,6 +698,8 @@ async def home(request: Request):
                 "user": user,
                 "current_year": time.gmtime().tm_year,
                 "messages": pop_messages(session),
+                "session_theme": getattr(session, "theme", "dark"),
+                "static_version": STATIC_VERSION,
             }
             response = TEMPLATES.TemplateResponse("htmx/unauthorized.html", context)
         if created:
@@ -483,8 +726,14 @@ async def update_general_options(request: Request):
     session.use_prompt_compression = "use_prompt_compression" in form
     if session.show_reasoning_summary is not None:
         session.show_reasoning_summary = "show_reasoning_summary" in form
-    session.messages.append("Options updated.")
-    response = render_dashboard(request, session, user, partial=True)
+    persist_user_settings(session, user)
+    hx_target = (request.headers.get("HX-Target") or "").strip()
+    if hx_target == "settings-modal-body":
+        response = render_settings_modal(request, session, user)
+        set_toast_header(response, ["Settings saved."])
+    else:
+        session.messages.append("Settings updated.")
+        response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
     return response
@@ -542,7 +791,49 @@ async def update_model_options(request: Request):
                 pass
         else:
             messages.append("Log level unchanged (None).")
-    response = render_dashboard(request, session, user, partial=True, extra_messages=messages)
+    persist_user_settings(session, user)
+    hx_target = (request.headers.get("HX-Target") or "").strip()
+    if hx_target == "settings-modal-body":
+        response = render_settings_modal(request, session, user)
+        set_toast_header(response, messages or ["Settings saved."])
+    else:
+        response = render_dashboard(request, session, user, partial=True, extra_messages=messages)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
+@app.get("/settings/modal", response_class=HTMLResponse)
+async def load_settings_modal(request: Request):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    response = render_settings_modal(request, session, user)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
+@app.post("/settings/theme", response_class=HTMLResponse)
+async def update_theme(request: Request):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    form = await request.form()
+    requested_theme = (form.get("theme") or "").strip().lower()
+    if requested_theme not in {"dark", "light"}:
+        requested_theme = "dark" if session.theme != "dark" else "light"
+    session.theme = requested_theme
+    persist_user_settings(session, user)
+    response = TEMPLATES.TemplateResponse("htmx/partials/theme_toggle.html", {
+        "request": request,
+        "session": session,
+    })
+    trigger_payload = json.dumps({
+        "theme-changed": {"theme": requested_theme},
+        "show-toasts": [f"{requested_theme.title()} mode enabled."],
+    })
+    response.headers["HX-Trigger"] = trigger_payload
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
     return response
@@ -572,23 +863,95 @@ def _extract_text_from_upload(upload: UploadFile) -> Tuple[str, str]:
     return filename_root, text
 
 
+@app.post("/upload", response_class=HTMLResponse)
+async def upload_solution_description(request: Request, file: UploadFile = File(None)):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if not file:
+        session.messages.append("Choose a solution description file to upload.")
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
+    filename_root, text = _extract_text_from_upload(file)
+    display_name = file.filename or f"{filename_root}.docx"
+    _set_stored_solution(session, display_name, text)
+    session.messages.append(f"Stored '{display_name}' for reuse.")
+    try:
+        append_log_to_blob(f"{session.user_info or user.display_name} : Uploaded solution description - {display_name}")
+    except Exception:
+        pass
+    response = render_dashboard(request, session, user, partial=True)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
+@app.post("/upload/clear", response_class=HTMLResponse)
+async def clear_stored_solution(request: Request):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    had_value = bool(session.stored_solution_text)
+    session.stored_solution_text = None
+    session.stored_solution_filename = None
+    session.messages.append("Cleared stored solution description." if had_value else "No stored solution description to clear.")
+    response = render_dashboard(request, session, user, partial=True)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
 @app.post("/analysis", response_class=HTMLResponse)
-async def analyze_solution(request: Request, file: UploadFile = File(...)):
+async def analyze_solution(request: Request, file: UploadFile = File(None)):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
     ensure_models_loaded()
-    filename_root, text = _extract_text_from_upload(file)
+    filename_root = ""
+    text: Optional[str] = None
+    display_name = ""
+    if file:
+        filename_root, text = _extract_text_from_upload(file)
+        display_name = file.filename or f"{filename_root}.docx"
+        _set_stored_solution(session, display_name, text)
+    else:
+        text = session.stored_solution_text
+        if not text:
+            session.messages.append("Upload a solution description before running analysis.")
+            response = render_dashboard(request, session, user, partial=True)
+            if created:
+                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+            return response
+        filename_root = _stored_solution_root(session)
+        display_name = session.stored_solution_filename or "Stored solution description"
 
-    progress = ProgressCollector()
+    session.live_progress = []
+    session.progress_pending_toasts = []
+    session.progress_version = uuid.uuid4().hex
+    session.progress_active = True
+
+    def _progress_sink(message: str) -> None:
+        session.live_progress.append(message)
+        if len(session.live_progress) > 200:
+            session.live_progress = session.live_progress[-200:]
+        normalized = " ".join(str(message).strip().split())
+        if not normalized:
+            return
+        if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            session.progress_pending_toasts.append(normalized)
+
+    progress = ProgressCollector(sink=_progress_sink)
     rebuild_cache = not session.use_cache
     reasoning_effort = session.reasoning_level if is_reasoning_model(session.selected_model) else None
     try:
-        append_log_to_blob(f"{session.user_info or user.display_name} : Analyze the solution description - {file.filename}")
+        append_log_to_blob(f"{session.user_info or user.display_name} : Analyze the solution description - {display_name}")
     except Exception:
         pass
 
-    analysis_text, completion_cost = process_solution_description_analysis(
+    analysis_text, completion_cost = await run_in_threadpool(
+        process_solution_description_analysis,
         solution_description=text,
         model=session.selected_model,
         reasoning_effort=reasoning_effort,
@@ -600,6 +963,21 @@ async def analyze_solution(request: Request, file: UploadFile = File(...)):
     )
 
     html_content = markdown.markdown(analysis_text or "", extensions=["fenced_code", "tables"]) if analysis_text else "<p>No analysis generated.</p>"
+    session.live_progress = []
+    session.progress_pending_toasts = []
+    session.progress_version = uuid.uuid4().hex
+    session.progress_active = True
+
+    def _progress_sink(message: str) -> None:
+        session.live_progress.append(message)
+        if len(session.live_progress) > 200:
+            session.live_progress = session.live_progress[-200:]
+        normalized = " ".join(str(message).strip().split())
+        if not normalized:
+            return
+        if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            session.progress_pending_toasts.append(normalized)
+
     output_dir = BASE_DIR / "rai-assessment-output"
     output_dir.mkdir(exist_ok=True)
     identifier = generate_unique_identifier()
@@ -614,13 +992,18 @@ async def analyze_solution(request: Request, file: UploadFile = File(...)):
         if not reasoning_summary and last_reasoning_summary_status() == "empty":
             reasoning_summary = "Reasoning summary not returned for this request."
 
+    formatted_progress = format_progress_messages(progress.messages)
+    toast_messages = [item.get("heading", "") for item in formatted_progress if item.get("heading")]
+
     session.analysis_result = AnalysisResult(
         html=html_content,
         cost=completion_cost,
         file_path=str(analysis_path),
         reasoning_summary=reasoning_summary,
     )
-    session.messages.extend(progress.messages)
+    session.progress_active = False
+    session.messages.append("Solution description analyzed successfully.")
+    session.messages.extend(toast_messages)
     response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
@@ -628,12 +1011,43 @@ async def analyze_solution(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/generate", response_class=HTMLResponse)
-async def generate_assessment(request: Request, file: UploadFile = File(...)):
+async def generate_assessment(request: Request, file: UploadFile = File(None)):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
     ensure_models_loaded()
-    filename_root, text = _extract_text_from_upload(file)
+    filename_root = ""
+    text: Optional[str] = None
+    display_name = ""
+    if file:
+        filename_root, text = _extract_text_from_upload(file)
+        display_name = file.filename or f"{filename_root}.docx"
+        _set_stored_solution(session, display_name, text)
+    else:
+        text = session.stored_solution_text
+        if not text:
+            session.messages.append("Upload a solution description before generating a draft.")
+            response = render_dashboard(request, session, user, partial=True)
+            if created:
+                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+            return response
+        filename_root = _stored_solution_root(session)
+        display_name = session.stored_solution_filename or "Stored solution description"
+
+    session.live_progress = []
+    session.progress_pending_toasts = []
+    session.progress_version = uuid.uuid4().hex
+    session.progress_active = True
+
+    def _progress_sink(message: str) -> None:
+        session.live_progress.append(message)
+        if len(session.live_progress) > 200:
+            session.live_progress = session.live_progress[-200:]
+        normalized = " ".join(str(message).strip().split())
+        if not normalized:
+            return
+        if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            session.progress_pending_toasts.append(normalized)
 
     output_dir = BASE_DIR / "rai-assessment-output"
     output_dir.mkdir(exist_ok=True)
@@ -651,18 +1065,19 @@ async def generate_assessment(request: Request, file: UploadFile = File(...)):
     internal_path.write_bytes(rai_master_internal.read_bytes())
     public_path.write_bytes(rai_master_public.read_bytes())
 
-    progress = ProgressCollector()
+    progress = ProgressCollector(sink=_progress_sink)
     rebuild_cache = not session.use_cache
     reasoning_effort = session.reasoning_level if is_reasoning_model(session.selected_model) else None
     compress_mode = session.use_prompt_compression
 
     try:
-        append_log_to_blob(f"{session.user_info or user.display_name} : Generate draft RAI assessment - {file.filename}")
+        append_log_to_blob(f"{session.user_info or user.display_name} : Generate draft RAI assessment - {display_name}")
     except Exception:
         pass
 
     try:
-        update_rai_assessment_template(
+        await run_in_threadpool(
+            update_rai_assessment_template,
             solution_description=text,
             rai_filepath=str(internal_path),
             rai_public_filepath=str(public_path),
@@ -676,8 +1091,19 @@ async def generate_assessment(request: Request, file: UploadFile = File(...)):
             verbose=False,
         )
     except Exception as exc:
+        session.progress_active = False
         log.exception("Generation failed")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {exc}")
+        remove_file_safe(str(internal_path))
+        remove_file_safe(str(public_path))
+        error_message = "Draft generation failed. Check logs for details and try again."
+        formatted_steps = format_progress_messages(progress.messages)
+        toast_messages = [item.get("heading", "") for item in formatted_steps if item.get("heading")]
+        session.messages.append(error_message)
+        session.messages.extend(toast_messages)
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -694,6 +1120,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(...)):
             reasoning_summary = summary
         elif last_reasoning_summary_status() == "empty":
             reasoning_summary = "Reasoning summary not returned for this request."
+    formatted_steps = format_progress_messages(progress.messages)
     cost = extract_cost_from_messages(progress.messages)
     message = "Draft RAI Assessment generated successfully."
     session.generation_result = GenerationResult(
@@ -703,8 +1130,12 @@ async def generate_assessment(request: Request, file: UploadFile = File(...)):
         cost=cost,
         message=message,
         reasoning_summary=reasoning_summary,
+        steps=formatted_steps,
     )
-    session.messages.extend(progress.messages)
+    session.progress_active = False
+    toast_messages = [item.get("heading", "") for item in formatted_steps if item.get("heading")]
+    session.messages.append(message)
+    session.messages.extend(toast_messages)
     response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
@@ -813,7 +1244,12 @@ async def clear_cache(request: Request):
             pass
     else:
         session.messages.append("Cache file not found.")
-    response = render_dashboard(request, session, user, partial=True)
+    hx_target = (request.headers.get("HX-Target") or "").strip()
+    if hx_target == "settings-modal-body":
+        response = render_settings_modal(request, session, user)
+        set_toast_header(response, pop_messages(session))
+    else:
+        response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
     return response

@@ -27,7 +27,9 @@ EXPOSE 80
 # Set environment variables to retrieve the build time as an environment variable
 # docker build --build-arg BUILD_TIME="$(date '+%d/%m/%Y %Hh%M')" -t plidockerregistry.azurecr.io/rai .
 ARG BUILD_TIME
+ARG STATIC_ASSET_VERSION
 ENV BUILD_TIME=${BUILD_TIME}
+ENV STATIC_ASSET_VERSION=${STATIC_ASSET_VERSION}
 
 # Run with Streamlit
 # CMD [ "streamlit", "run", "streamlit_ui_main.py", "--server.port=80", "--server.address=0.0.0.0", "--server.enableWebsocketCompression=false" ]

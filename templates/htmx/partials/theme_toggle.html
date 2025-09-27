@@ -1,0 +1,18 @@
+{% set current_theme = session.theme if session and session.theme in ["dark", "light"] else "dark" %}
+{% set next_theme = "light" if current_theme == "dark" else "dark" %}
+
+<div id="theme-toggle-slot" class="theme-toggle" data-current-theme="{{ current_theme }}">
+    <div class="theme-toggle-actions">
+        <span class="theme-label">Current theme: {{ current_theme|title }}</span>
+        <span class="theme-icon" aria-hidden="true">{% if current_theme == "dark" %}🌙{% else %}☀️{% endif %}</span>
+        <button type="button"
+                class="button secondary"
+                hx-post="/settings/theme"
+                hx-target="#theme-toggle-slot"
+                hx-swap="outerHTML"
+                hx-vals='{"theme": "{{ next_theme }}"}'>
+            Switch to {{ next_theme.title() }} mode
+        </button>
+    </div>
+    <p class="muted small">Dark mode helps reduce glare in late-night reviews. Switch when you need more contrast.</p>
+</div>

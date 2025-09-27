@@ -5,15 +5,25 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title or "RAI Assessment Copilot" }}</title>
-    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/app.css{% if static_version %}?v={{ static_version }}{% endif %}">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
-<body>
+<body class="theme-{{ session_theme }}">
     <header class="app-header">
-        <div class="container">
-            <h1>RAI Assessment Copilot</h1>
-            {% if user %}
-            <p class="muted">Signed in as {{ user.display_name }}{% if user.is_admin %} <span class="badge">Admin</span>{% endif %}</p>
+        <div class="container header-bar">
+            <div class="header-info">
+                <h1>RAI Assessment Copilot</h1>
+                {% if user %}
+                <p class="muted">Signed in as {{ user.display_name }}{% if user.is_admin %} <span class="badge">Admin</span>{% endif %}</p>
+                {% endif %}
+            </div>
+            {% if user and user.authorized %}
+            <div class="header-actions">
+                <button type="button" id="settings-button" class="button ghost">Settings</button>
+                <form action="/logout" method="post" class="logout-form">
+                    <button type="submit" class="button secondary">Log out</button>
+                </form>
+            </div>
             {% endif %}
         </div>
     </header>
@@ -23,5 +33,23 @@
     <footer class="app-footer container">
         <small>&copy; {{ current_year }} RAI Assessment Copilot &middot; This is an AI-assisted drafting tool. Review outputs before submission.</small>
     </footer>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <div id="loading-overlay" class="loading-overlay" aria-hidden="true" role="status">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="loading-text">Working on it…</p>
+    </div>
+    <div id="settings-modal" class="modal-root" aria-hidden="true">
+        <div class="modal-backdrop" data-modal-close></div>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+            <button type="button" class="modal-close" data-modal-close aria-label="Close settings">&times;</button>
+            <div class="modal-body">
+                <h2 id="settings-modal-title">Settings</h2>
+                <div id="settings-modal-body">
+                    <div class="modal-loading">Loading settings…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/app.js{% if static_version %}?v={{ static_version }}{% endif %}" defer></script>
 </body>
 </html>
