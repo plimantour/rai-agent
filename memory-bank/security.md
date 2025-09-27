@@ -36,13 +36,15 @@
 - **Azure Entra ID authentication flow:** `/auth/session` validates Microsoft Entra tokens via Graph, ensures allow-list membership before granting access, and restricts the development bypass to explicit localhost opt-in.
 - **Key Vault-backed allow list:** Authorized user identities are sourced from the `RAI-ASSESSMENT-USERS` secret in Azure Key Vault (with controlled fallbacks), allowing centralized access management without code changes.
 - **Admin-gated logging:** Session log level defaults to "None"; only Entra-verified admins may toggle logging from the settings modal, limiting diagnostics exposure to trusted operators.
+- **Sanitized LLM rendering:** `render_markdown_safe` now funnels all LLM content through `bleach.clean`, preserving a controlled HTML allowlist and stripping scripts/unsafe attributes before response rendering.
+- **Toast hardening:** Backend toast payloads are HTML-escaped and normalized, while the frontend renders via `textContent` with duplicate-suppression to block XSS vectors and message replay.
 
 ## Backend Threat Summary
 
 | Severity | Area | Risk | Mitigation Status |
 |----------|------|------|--------------------|
-| High | Rendering | LLM HTML injected via `analysis_result.html|safe` | Open – sanitize before render |
-| High | Notifications | Toasts rendered with `innerHTML` | Open – switch to safe text nodes |
+| High | Rendering | LLM HTML injected via `analysis_result.html|safe` | Implemented – bleach-sanitized markdown output |
+| High | Notifications | Toasts rendered with `innerHTML` | Implemented – escaped backend payloads + text-only rendering |
 | High | Prompt Safety | Prompt injection via uploaded content | Open – add guard prompts/moderation |
 | High | Request AuthZ | Cross-site request forgery on HTMX POSTs | Open – add CSRF tokens |
 | Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | Open – enforce token validation |

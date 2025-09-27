@@ -7,9 +7,11 @@
 - HTMX dashboard progress feed partial with `/progress` polling so in-flight `ui_hook` messages surface in real time (step list + toast queue).
  - Progress sink wiring for `/generate` so draft creation emits live updates and toasts like analysis.
  - Docker build arg `STATIC_ASSET_VERSION` to stamp static asset URLs per image build.
+- Settings modal footer now surfaces the current build timestamp sourced from the `BUILD_TIME` environment variable for auditability.
 
 ### Fixed
 - Generation failures now roll back partial outputs and re-render the dashboard with a toast message instead of returning HTTP 500 errors.
+- Duplicate toast notifications eliminated via session-scoped dedupe on the backend paired with client-side suppression of repeat payloads.
 
 ### Changed
 - Dashboard templates and CSS updated to embed the live progress panel and companion styling while versioning static assets to bust browser caches on deploy.

@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import html
 import tempfile
 import threading
 import time
@@ -23,9 +24,10 @@ import uuid
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Set
 
 import markdown
+import bleach
 import requests
 from fastapi import (BackgroundTasks, FastAPI, File,
                      HTTPException, Request, UploadFile)
@@ -60,6 +62,35 @@ BASE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 STATIC_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(time.time())))
+
+ALLOWED_MARKDOWN_TAGS = [
+    "a",
+    "blockquote",
+    "code",
+    "em",
+    "hr",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "ul",
+    "br",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+]
+
+ALLOWED_MARKDOWN_ATTRS = {
+    "a": ["href", "title", "rel"],
+    "td": ["colspan", "rowspan", "align"],
+    "th": ["colspan", "rowspan", "align"],
+}
+
+ALLOWED_MARKDOWN_PROTOCOLS = ["http", "https", "mailto"]
 
 # ---------------------------------------------------------------------------
 # Session & user management
@@ -109,6 +140,7 @@ class SessionState:
     messages: List[str] = field(default_factory=list)
     live_progress: List[str] = field(default_factory=list)
     progress_pending_toasts: List[str] = field(default_factory=list)
+    progress_seen_toasts: Set[str] = field(default_factory=set)
     progress_version: str = ""
     progress_active: bool = False
     stored_solution_text: Optional[str] = None
@@ -357,6 +389,7 @@ def render_dashboard(request: Request, session: SessionState, user: UserContext,
 
 
 def render_settings_modal(request: Request, session: SessionState, user: UserContext) -> HTMLResponse:
+    build_time = os.getenv("BUILD_TIME", "Unknown build time")
     context = {
         "request": request,
         "session": session,
@@ -366,6 +399,7 @@ def render_settings_modal(request: Request, session: SessionState, user: UserCon
             "system_logs": bool(collect_system_log_files()),
         },
         "static_version": STATIC_VERSION,
+        "build_time": build_time,
     }
     return TEMPLATES.TemplateResponse("htmx/partials/settings_modal_body.html", context)
 
@@ -380,6 +414,7 @@ async def poll_progress(request: Request, version: Optional[str] = None):
     if version and version != session.progress_version:
         # Client is out of sync: reset polling state by clearing delivered toasts.
         session.progress_pending_toasts.clear()
+        session.progress_seen_toasts = set()
 
     context = {
         "request": request,
@@ -401,7 +436,8 @@ async def poll_progress(request: Request, version: Optional[str] = None):
 def set_toast_header(response: HTMLResponse, messages: List[str]) -> None:
     if not messages:
         return
-    payload = json.dumps({"show-toasts": messages})
+    safe_messages = [html.escape(str(message), quote=False) for message in messages]
+    payload = json.dumps({"show-toasts": safe_messages})
     response.headers["HX-Trigger"] = payload
 
 
@@ -511,6 +547,17 @@ def format_progress_messages(messages: List[str]) -> List[Dict[str, str]]:
             continue
         formatted.append({"heading": normalized, "subtext": ""})
     return formatted
+
+
+def render_markdown_safe(content: Optional[str]) -> str:
+    raw_html = markdown.markdown(content or "", extensions=["fenced_code", "tables"])
+    return bleach.clean(
+        raw_html,
+        tags=ALLOWED_MARKDOWN_TAGS,
+        attributes=ALLOWED_MARKDOWN_ATTRS,
+        protocols=ALLOWED_MARKDOWN_PROTOCOLS,
+        strip=True,
+    )
 
 
 def remove_file_safe(path: str) -> None:
@@ -951,6 +998,7 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
 
     session.live_progress = []
     session.progress_pending_toasts = []
+    session.progress_seen_toasts = set()
     session.progress_version = uuid.uuid4().hex
     session.progress_active = True
 
@@ -962,6 +1010,9 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
         if not normalized:
             return
         if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            if normalized in session.progress_seen_toasts:
+                return
+            session.progress_seen_toasts.add(normalized)
             session.progress_pending_toasts.append(normalized)
 
     progress = ProgressCollector(sink=_progress_sink)
@@ -984,21 +1035,11 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
         verbose=False,
     )
 
-    html_content = markdown.markdown(analysis_text or "", extensions=["fenced_code", "tables"]) if analysis_text else "<p>No analysis generated.</p>"
-    session.live_progress = []
-    session.progress_pending_toasts = []
-    session.progress_version = uuid.uuid4().hex
-    session.progress_active = True
-
-    def _progress_sink(message: str) -> None:
-        session.live_progress.append(message)
-        if len(session.live_progress) > 200:
-            session.live_progress = session.live_progress[-200:]
-        normalized = " ".join(str(message).strip().split())
-        if not normalized:
-            return
-        if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
-            session.progress_pending_toasts.append(normalized)
+    html_content = (
+        render_markdown_safe(analysis_text)
+        if analysis_text
+        else render_markdown_safe("No analysis generated.")
+    )
 
     output_dir = BASE_DIR / "rai-assessment-output"
     output_dir.mkdir(exist_ok=True)
@@ -1014,9 +1055,6 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
         if not reasoning_summary and last_reasoning_summary_status() == "empty":
             reasoning_summary = "Reasoning summary not returned for this request."
 
-    formatted_progress = format_progress_messages(progress.messages)
-    toast_messages = [item.get("heading", "") for item in formatted_progress if item.get("heading")]
-
     session.analysis_result = AnalysisResult(
         html=html_content,
         cost=completion_cost,
@@ -1027,7 +1065,6 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     session.live_progress = []
     session.progress_pending_toasts = []
     session.messages.append("Solution description analyzed successfully.")
-    session.messages.extend(toast_messages)
     response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
@@ -1060,6 +1097,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
 
     session.live_progress = []
     session.progress_pending_toasts = []
+    session.progress_seen_toasts = set()
     session.progress_version = uuid.uuid4().hex
     session.progress_active = True
 
@@ -1071,6 +1109,9 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         if not normalized:
             return
         if not any(normalized.startswith(prefix) for prefix in DETAIL_MESSAGE_PREFIXES):
+            if normalized in session.progress_seen_toasts:
+                return
+            session.progress_seen_toasts.add(normalized)
             session.progress_pending_toasts.append(normalized)
 
     output_dir = BASE_DIR / "rai-assessment-output"
@@ -1122,10 +1163,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         remove_file_safe(str(internal_path))
         remove_file_safe(str(public_path))
         error_message = "Draft generation failed. Check logs for details and try again."
-        formatted_steps = format_progress_messages(progress.messages)
-        toast_messages = [item.get("heading", "") for item in formatted_steps if item.get("heading")]
         session.messages.append(error_message)
-        session.messages.extend(toast_messages)
         response = render_dashboard(request, session, user, partial=True)
         if created:
             response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
@@ -1161,9 +1199,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
     session.progress_active = False
     session.live_progress = []
     session.progress_pending_toasts = []
-    toast_messages = [item.get("heading", "") for item in formatted_steps if item.get("heading")]
     session.messages.append(message)
-    session.messages.extend(toast_messages)
     response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")

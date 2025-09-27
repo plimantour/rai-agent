@@ -34,6 +34,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 
 | Component | Depends On | Provides |
 |-----------|------------|----------|
+| `htmx_ui_main.py` | helpers.*, prompts.*, `templates/htmx/*`, `static/js/app.js` | HTMX/FastAPI UI endpoints, live progress poller, toast dedupe orchestration |
 | `streamlit_ui_main.py` | helpers.*, prompts.* | User interaction, progress, output delivery |
 | `main.py` | prompts module, docs_utils | CLI doc generation |
 | `prompts_engineering_llmlingua.py` | helpers.*, llmlingua, openai | Orchestrates multi-step LLM workflow |
@@ -42,6 +43,8 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 | `helpers/blob_cache.py` | azure.identity, storage, keyvault | Logs + secret retrieval |
 | `helpers/user_auth.py` | Streamlit, requests | Authentication info retrieval |
 | `helpers/completion_pricing.py` | static pricing table | Cost estimation |
+| `static/js/app.js` | Bootstrap toasts, HTMX events, `htmx_ui_main.py` data attributes | Client-side toast rendering, dedupe suppression, progress UX glue |
+| `templates/htmx/partials/*` | Jinja context from `htmx_ui_main.py` | Shared partials for progress feed, settings modal, and build metadata display |
 
 Scalability Considerations:
 - Current single-instance assumptions (local cache, no locking)

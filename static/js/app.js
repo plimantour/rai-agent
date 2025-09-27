@@ -6,6 +6,7 @@
     let settingsButton = null;
     let lastFocusedElement = null;
     let loadingOverlay = null;
+    let recentToasts = new Set();
 
     function getToastContainer() {
         return document.getElementById("toast-container");
@@ -17,9 +18,17 @@
             console.warn("Toast container missing");
             return;
         }
+        
+        // Prevent duplicate toasts within 5 seconds
+        if (recentToasts.has(message)) {
+            return;
+        }
+        recentToasts.add(message);
+        setTimeout(() => recentToasts.delete(message), 5000);
+        
         const toast = document.createElement("div");
         toast.className = "toast";
-        toast.innerHTML = message;
+        toast.textContent = message;
         container.appendChild(toast);
         requestAnimationFrame(() => {
             toast.classList.add("show");
@@ -30,15 +39,56 @@
         }, 5000);
     }
 
+    function normalizeToastMessage(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value === "string") {
+            return value;
+        }
+        if (typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+        }
+        if (Array.isArray(value)) {
+            const combined = value
+                .map((entry) => normalizeToastMessage(entry))
+                .filter((entry) => typeof entry === "string" && entry.trim().length > 0)
+                .join(" \u2022 ");
+            return combined.length > 0 ? combined : null;
+        }
+        if (typeof value === "object") {
+            if (Object.prototype.hasOwnProperty.call(value, "value")) {
+                const nested = normalizeToastMessage(value.value);
+                if (typeof nested === "string" && nested.trim().length > 0) {
+                    return nested;
+                }
+            }
+            const candidateKeys = ["heading", "title", "message", "detail", "description"];
+            for (const key of candidateKeys) {
+                const candidate = value[key];
+                if (typeof candidate === "string" && candidate.trim().length > 0) {
+                    return candidate;
+                }
+            }
+            try {
+                const serialized = JSON.stringify(value);
+                return serialized && serialized !== "{}" ? serialized : null;
+            } catch (err) {
+                return null;
+            }
+        }
+        return String(value);
+    }
+
     function emitToastMessages(payload) {
         if (!payload) {
             return;
         }
         const messages = Array.isArray(payload) ? payload : [payload];
         messages
-            .map((msg) => (typeof msg === "string" ? msg : String(msg)))
+            .map((msg) => normalizeToastMessage(msg))
+            .filter((msg) => typeof msg === "string" && msg.trim().length > 0)
             .map((msg) => msg.trim())
-            .filter((msg) => msg.length > 0)
             .forEach((msg) => showToast(msg));
     }
 
@@ -251,7 +301,9 @@
         syncInitialTheme();
         setupUploadForm(document);
         const handleToastEvent = (event) => {
-            emitToastMessages(event?.detail);
+            const detail = event?.detail;
+            const payload = detail && Object.prototype.hasOwnProperty.call(detail, "value") ? detail.value : detail;
+            emitToastMessages(payload);
         };
 
         document.addEventListener("show-toasts", handleToastEvent);
