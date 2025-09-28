@@ -35,7 +35,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 
 | Component | Depends On | Provides |
 |-----------|------------|----------|
-| `htmx_ui_main.py` | helpers.*, prompts.*, `templates/htmx/*`, `static/js/app.js` | HTMX/FastAPI UI endpoints, live progress poller, toast dedupe orchestration, Key Vault allow/admin roster loaders |
+| `htmx_ui_main.py` | helpers.*, prompts.*, `templates/htmx/*`, `static/js/app.js` | HTMX/FastAPI UI endpoints, live progress poller, toast dedupe orchestration, Key Vault allow/admin roster loaders, CSRF validation |
 | `streamlit_ui_main.py` | helpers.*, prompts.* | User interaction, progress, output delivery |
 | `main.py` | prompts module, docs_utils | CLI doc generation |
 | `prompts_engineering_llmlingua.py` | helpers.*, llmlingua, openai | Orchestrates multi-step LLM workflow |
@@ -61,4 +61,5 @@ Extensibility Hooks:
 - Adding a new section = append to `steps` list with processor + prompt constant.
 - Switching model provider: encapsulate conditional branches behind interface.
 - Adding new reasoning tiers: extend effort → (optional future output cap) + pricing metadata.
+- CSRF middleware pattern can be adapted to future SPAs by emitting per-session tokens via meta tags + JS header injection.
 

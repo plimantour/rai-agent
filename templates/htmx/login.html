@@ -19,6 +19,8 @@
     const config = JSON.parse('{{ msal_config_json | safe }}');
     const loginButton = document.getElementById('msal-login-button');
     const statusEl = document.getElementById('login-status');
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') || '' : '';
 
     if (!config.clientId || !config.tenantId || !config.redirectUri) {
         statusEl.textContent = 'Authentication is not fully configured. Contact the administrator.';
@@ -88,7 +90,10 @@
             }
             const response = await fetch('/auth/session', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                },
                 body: JSON.stringify({ accessToken }),
             });
             if (response.ok) {

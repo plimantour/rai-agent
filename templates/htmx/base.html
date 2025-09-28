@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="csrf-token" content="{{ csrf_token or '' }}">
     <title>{{ title or "RAI Assessment Copilot" }}</title>
     <link rel="stylesheet" href="/static/css/app.css{% if static_version %}?v={{ static_version }}{% endif %}">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
@@ -21,6 +22,7 @@
             <div class="header-actions">
                 <button type="button" id="settings-button" class="button ghost">Settings</button>
                 <form action="/logout" method="post" class="logout-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
                     <button type="submit" class="button secondary">Log out</button>
                 </form>
             </div>

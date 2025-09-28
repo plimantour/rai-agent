@@ -12,11 +12,13 @@ Blob Storage) used by the Streamlit UI.
 from __future__ import annotations
 
 import base64
+import hmac
+import html
 import io
 import json
 import os
 import re
-import html
+import secrets
 import tempfile
 import threading
 import time
@@ -106,6 +108,10 @@ def _default_show_reasoning_summary() -> Optional[bool]:
     return True
 
 
+def _generate_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 @dataclass
 class AnalysisResult:
     html: str
@@ -150,6 +156,7 @@ class SessionState:
     cached_user: Optional['UserContext'] = None
     settings_loaded: bool = False
     settings_restored: bool = False
+    csrf_token: str = field(default_factory=_generate_csrf_token)
 
     @property
     def reasoning_levels(self) -> List[str]:
@@ -184,6 +191,28 @@ class LoginRequest(BaseModel):
     accessToken: str
 
 
+def get_csrf_token(session: SessionState) -> str:
+    token = getattr(session, "csrf_token", "")
+    if not token:
+        token = _generate_csrf_token()
+        session.csrf_token = token
+    return token
+
+
+async def enforce_csrf(request: Request, session: SessionState) -> None:
+    expected = get_csrf_token(session)
+    provided = request.headers.get("x-csrf-token") or request.headers.get("X-CSRF-Token")
+    if provided and hmac.compare_digest(provided, expected):
+        return
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/x-www-form-urlencoded" in content_type:
+        form = await request.form()
+        submitted = form.get("csrf_token")
+        if submitted and hmac.compare_digest(submitted, expected):
+            return
+    raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+
+
 def ensure_session(request: Request) -> Tuple[str, SessionState, bool]:
     session_id = request.cookies.get("rai_session")
     created = False
@@ -201,6 +230,8 @@ def ensure_session(request: Request) -> Tuple[str, SessionState, bool]:
         if not hasattr(session, "settings_loaded"):
             session.settings_loaded = False
             session.settings_restored = False
+        if not getattr(session, "csrf_token", ""):
+            session.csrf_token = _generate_csrf_token()
     return session_id, session, created
 
 
@@ -410,6 +441,7 @@ def render_dashboard(request: Request, session: SessionState, user: UserContext,
         "progress_version": session.progress_version,
         "live_progress": format_progress_messages(session.live_progress),
         "progress_active": session.progress_active,
+        "csrf_token": get_csrf_token(session),
     }
     template_name = "htmx/partials/dashboard.html" if partial else "htmx/index.html"
     return TEMPLATES.TemplateResponse(template_name, context)
@@ -427,6 +459,7 @@ def render_settings_modal(request: Request, session: SessionState, user: UserCon
         },
         "static_version": STATIC_VERSION,
         "build_time": build_time,
+        "csrf_token": get_csrf_token(session),
     }
     return TEMPLATES.TemplateResponse("htmx/partials/settings_modal_body.html", context)
 
@@ -484,6 +517,7 @@ def render_login(request: Request, session: SessionState) -> HTMLResponse:
         "current_year": time.gmtime().tm_year,
         "session_theme": getattr(session, "theme", "dark"),
         "static_version": STATIC_VERSION,
+        "csrf_token": get_csrf_token(session),
     }
     return TEMPLATES.TemplateResponse("htmx/login.html", context)
 
@@ -712,6 +746,7 @@ async def get_session_and_user(request: Request) -> Tuple[str, SessionState, boo
 @app.post("/auth/session")
 async def establish_session(request: Request, payload: LoginRequest):
     session_id, session, created = ensure_session(request)
+    await enforce_csrf(request, session)
     access_token = (payload.accessToken or "").strip()
     if not access_token:
         raise HTTPException(status_code=400, detail="Missing access token")
@@ -776,7 +811,12 @@ async def establish_session(request: Request, payload: LoginRequest):
 @app.post("/logout")
 async def logout(request: Request):
     session_id = request.cookies.get("rai_session")
+    session = None
     if session_id:
+        with SESSION_LOCK:
+            session = SESSION_STORE.get(session_id)
+    if session:
+        await enforce_csrf(request, session)
         with SESSION_LOCK:
             SESSION_STORE.pop(session_id, None)
     response = RedirectResponse(url="/", status_code=303)
@@ -798,6 +838,7 @@ async def home(request: Request):
                 "messages": pop_messages(session),
                 "session_theme": getattr(session, "theme", "dark"),
                 "static_version": STATIC_VERSION,
+                "csrf_token": get_csrf_token(session),
             }
             response = TEMPLATES.TemplateResponse("htmx/unauthorized.html", context)
         if created:
@@ -819,6 +860,7 @@ async def update_general_options(request: Request):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     form = await request.form()
     session.use_cache = "use_cache" in form
     session.use_prompt_compression = "use_prompt_compression" in form
@@ -844,6 +886,7 @@ async def update_model_options(request: Request):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin privileges required")
+    await enforce_csrf(request, session)
     form = await request.form()
     selected_model = form.get("selected_model") or session.selected_model
     if selected_model not in model_pricing_euros:
@@ -917,6 +960,7 @@ async def update_theme(request: Request):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     form = await request.form()
     requested_theme = (form.get("theme") or "").strip().lower()
     if requested_theme not in {"dark", "light"}:
@@ -966,6 +1010,7 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     if not file:
         session.messages.append("Choose a solution description file to upload.")
         response = render_dashboard(request, session, user, partial=True)
@@ -991,6 +1036,7 @@ async def clear_stored_solution(request: Request):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     had_value = bool(session.stored_solution_text)
     session.stored_solution_text = None
     session.stored_solution_filename = None
@@ -1006,6 +1052,7 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     ensure_models_loaded()
     filename_root = ""
     text: Optional[str] = None
@@ -1105,6 +1152,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
     ensure_models_loaded()
     filename_root = ""
     text: Optional[str] = None
@@ -1327,6 +1375,7 @@ async def clear_cache(request: Request):
     session_id, session, created, user = await get_session_and_user(request)
     if not user.authorized or not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin privileges required")
+    await enforce_csrf(request, session)
     cache_path = BASE_DIR / "cache" / "completions_cache.pkl"
     if cache_path.exists():
         remove_file_safe(str(cache_path))

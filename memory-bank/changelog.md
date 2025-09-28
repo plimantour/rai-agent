@@ -5,9 +5,11 @@
 ## 2025-09-28
 ### Added
 - Key Vault-backed admin roster loader that resolves privileged users from the `RAI-ASSESSMENT-ADMINS` secret (with caching and fallback env support) so admin rotation no longer requires code changes.
+- Per-session CSRF tokens injected via meta tags/hidden fields and attached to all HTMX requests, blocking cross-site POST attempts across auth, uploads, settings, and admin endpoints.
 
 ### Changed
 - Admin authorization now matches display name, UPN, or object ID against both allow and admin lists, reusing the same caching + Key Vault retrieval path as the standard allow list while retaining the localhost-only dev bypass toggle.
+- Frontend `app.js` now adds the CSRF header on every HTMX request; server routes enforce validation before executing side effects.
 
 ## 2025-09-27
 ### Added

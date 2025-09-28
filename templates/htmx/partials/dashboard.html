@@ -12,6 +12,7 @@
     <section class="panel">
         <h3>Solution description</h3>
         <form id="solution-form" class="stack" data-has-upload="{{ 'true' if session.stored_solution_text else 'false' }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="solution_file">Upload or replace the solution description</label>
             <input type="file" id="solution_file" name="file" accept=".docx,.pdf,.txt,.json"
                    hx-post="/upload" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML" hx-encoding="multipart/form-data">

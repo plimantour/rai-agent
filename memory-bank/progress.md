@@ -16,6 +16,7 @@
 - 2025-09-26: Matched Streamlit MSAL authentication inside HTMX (Graph validation, allow-list parity, session cookie) and hardened Container Apps provisioning for idempotent redeploys (Log Analytics `customerId`, RBAC-safe Key Vault set-policy, forced revision updates) with README alignment.
 - 2025-09-27: Implemented HTMX live progress polling (`/progress`) with session-backed queues for incremental `ui_hook` updates, real-time toast delivery, and cache-busted static assets ensuring freshly deployed CSS/JS loads without manual refresh. Generation path now mirrors analysis (progress sink, toast queue, graceful failure handling), the poller condition was corrected to a dataset comparison to stop HTMX syntax errors, Docker builds inject `STATIC_ASSET_VERSION` for deterministic cache busting, and subsequent JS/backend refinements ensure toast payloads hydrate immediately after HX swaps while clearing residual progress state so the "Live processing" banner disappears once results render while progress steps now render as bold div rows without ordered numbering for improved readability. Follow-on hardening introduced session-scoped toast dedupe (paired with client-side suppression) to stop duplicate notifications and surfaced the build timestamp in the settings modal for quick release provenance checks.
 - 2025-09-28: Replaced hard-coded admin checks with a Key Vault backed roster (`RAI-ASSESSMENT-ADMINS`) mirrored after the allow list, caching the secret and supporting local fallbacks so admin access can be rotated without redeploying while development bypass remains opt-in and localhost-only.
+- 2025-09-28: Added per-session CSRF tokens enforced across HTMX POST routes (auth, uploads, settings, admin actions) with client-side header injection and hidden form fallbacks, closing the cross-site request forgery gap.
 
 ## What Works
 
@@ -29,6 +30,7 @@
 - Download packaging (ZIP of both assessments)
 - Dual UI surfaces (Streamlit & HTMX/FastAPI) sharing the same business logic and allow-list enforcement, now with live progress feed + toast queue in the HTMX experience
 - Admin roster + allow list centrally managed via Key Vault secrets with cached fallbacks for resilience and zero-code rotation
+- CSRF protection enforced on all state-changing endpoints via per-session tokens, HTMX header injection, and server-side validation
 - Optional prompt compression (llmlingua v2) for cost reduction
 
 ## What's Left to Build
@@ -41,6 +43,7 @@
 - Input size limits & validation (prevent runaway tokenization)
 - Multi-language output parameterization
 - Role-based admin / audit (admin list now secret driven but lacks fine-grained roles/audit trail)
+- Formal automated CSRF regression tests (manual validation only so far)
 - Output quality scoring / evaluation harness
 - Persist & surface reasoning vs visible token breakdown per step
 - Optional env var controlled output length guardrail (off by default)

@@ -1,6 +1,7 @@
 (function () {
     const READY_EVENT = "DOMContentLoaded";
     const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
 
     let settingsModal = null;
     let settingsButton = null;
@@ -307,6 +308,19 @@
         };
 
         document.addEventListener("show-toasts", handleToastEvent);
+
+        document.body?.addEventListener("htmx:configRequest", (evt) => {
+            const token = csrfMeta ? csrfMeta.getAttribute("content") : null;
+            if (!token) {
+                return;
+            }
+            const headers = evt.detail?.headers;
+            if (headers && typeof headers === "object") {
+                headers["X-CSRF-Token"] = token;
+            } else if (evt.detail) {
+                evt.detail.headers = { "X-CSRF-Token": token };
+            }
+        });
 
         document.body?.addEventListener("htmx:beforeRequest", (evt) => {
             const path = evt.detail?.requestConfig?.path || evt.detail?.pathInfo?.path;

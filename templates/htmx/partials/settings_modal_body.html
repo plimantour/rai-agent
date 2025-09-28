@@ -6,6 +6,7 @@
     <section class="modal-section">
         <h3>General</h3>
         <form class="settings-form" hx-post="/options/general" hx-trigger="change delay:200ms" hx-target="#settings-modal-body" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="option-item">
                 <label class="toggle-label" for="use_cache">
                     <input type="checkbox" id="use_cache" name="use_cache" value="1" {% if session.use_cache %}checked{% endif %}>
@@ -36,6 +37,7 @@
     <section class="modal-section">
         <h3>Admin controls</h3>
         <form class="settings-form stack" hx-post="/options/model" hx-trigger="change delay:200ms" hx-target="#settings-modal-body" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="selected_model">Model</label>
             <select id="selected_model" name="selected_model">
                 {% for option in model_options %}
@@ -68,6 +70,7 @@
                 <a class="button secondary" href="/admin/download/system" hx-boost="false">Download system logs</a>
                 {% endif %}
                 <form method="post" action="/admin/cache/clear" hx-post="/admin/cache/clear" hx-target="#settings-modal-body" hx-swap="outerHTML" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="button danger">Clear cache</button>
                 </form>
             </div>

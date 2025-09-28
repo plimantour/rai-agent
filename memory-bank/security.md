@@ -5,7 +5,6 @@
 - **High – Untrusted LLM output rendered as HTML:** `analysis_result.html|safe` injects Azure OpenAI responses directly into the DOM. Malicious or poisoned outputs could contain `<script>` or other dangerous markup, leading to stored/ reflected XSS.
 - **High – Toast notifications use `innerHTML`:** `static/js/app.js` inserts toast messages via `innerHTML`. Messages that originate from user-controlled identifiers (e.g., Azure AD display names) could execute script if not sanitized.
 - **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs without current guardrails.
-- **Medium – No CSRF protection on POST routes:** State-changing HTMX requests rely solely on cookies with `SameSite=Lax`. Without CSRF tokens, a malicious site could trigger actions like `/analysis`, `/generate`, or `/upload` for an authenticated user.
 - **Medium – Graph access token validation gap:** `/auth/session` only checks that a token can call Microsoft Graph. It does not verify issuer, audience/client ID, or signature, so tokens minted for other apps with delegated scopes could impersonate users.
 - **Medium – File upload pipeline lacks guardrails:** `_write_temp_upload` reads entire files into memory and accepts DOCX/PDF/JSON/TXT without size limits or deep validation, opening the door to DoS (oversized or decompression-bomb uploads) or dangerous payloads processed downstream.
 - **Medium – Document parser attack surface:** `pdfminer` and `docx2txt` run on untrusted user uploads; crafted docs could exploit parser vulnerabilities or exhaust resources.
@@ -16,9 +15,9 @@
 
 ## Remediation Plan
 
-1. Sanitize or escape all LLM-generated markup before rendering; consider server-side sanitization (e.g., `bleach`) or client-side rendering that strips scripts/attributes.
-2. Update toast rendering to use `textContent`/DOM nodes and ensure backend messages are HTML-escaped.
-3. Introduce CSRF tokens for every state-changing POST, wiring tokens through HTMX headers or hidden inputs.
+1. Sanitize or escape all LLM-generated markup before rendering; consider server-side sanitization (e.g., `bleach`) or client-side rendering that strips scripts/attributes. ✅ Implemented via server-side markdown sanitization with Bleach (Sep 2025).
+2. Update toast rendering to use `textContent`/DOM nodes and ensure backend messages are HTML-escaped. ✅ Implemented with escaped payloads and client-side `textContent` rendering (Sep 2025).
+3. Introduce CSRF tokens for every state-changing POST, wiring tokens through HTMX headers or hidden inputs. ✅ Implemented via per-session tokens, HTMX request headers, and server-side validation (Sep 2025).
 4. Validate Microsoft Graph tokens beyond a simple profile fetch (audience/app ID, issuer) before trusting identity information.
 5. Apply upload safeguards: enforce max size, MIME/type checking, and scan DOCX/PDF content; harden `extract_text_from_input` against decompression bombs.
 6. Pin or self-host htmx with SRI support to prevent CDN supply-chain attacks.
@@ -39,15 +38,16 @@
 - **Admin-gated logging:** Session log level defaults to "None"; only Entra-verified admins may toggle logging from the settings modal, limiting diagnostics exposure to trusted operators.
 - **Sanitized LLM rendering:** `render_markdown_safe` now funnels all LLM content through `bleach.clean`, preserving a controlled HTML allowlist and stripping scripts/unsafe attributes before response rendering.
 - **Toast hardening:** Backend toast payloads are HTML-escaped and normalized, while the frontend renders via `textContent` with duplicate-suppression to block XSS vectors and message replay.
+- **CSRF tokens enforced:** Each session now issues a cryptographically random token stored in server memory, injected into forms/meta tags, attached to HTMX headers, and validated on every state-changing POST (including auth, uploads, settings, and admin endpoints).
 
 ## Backend Threat Summary
 
 | Severity | Area | Risk | Mitigation Status |
 |----------|------|------|--------------------|
-| High | Rendering | LLM HTML injected via `analysis_result.html|safe` | Implemented – bleach-sanitized markdown output |
-| High | Notifications | Toasts rendered with `innerHTML` | Implemented – escaped backend payloads + text-only rendering |
+| High | Rendering | LLM HTML injected via `analysis_result.html|safe` | ✅ Implemented – bleach-sanitized markdown output |
+| High | Notifications | Toasts rendered with `innerHTML` | ✅ Implemented – escaped backend payloads + text-only rendering |
 | High | Prompt Safety | Prompt injection via uploaded content | Open – add guard prompts/moderation |
-| High | Request AuthZ | Cross-site request forgery on HTMX POSTs | Open – add CSRF tokens |
+| High | Request AuthZ | Cross-site request forgery on HTMX POSTs | Implemented – per-session tokens validated on every POST |
 | Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | Open – enforce token validation |
 | Medium | File Handling | Upload pipeline lacks size/type checks | Open – add bounds + scanning |
 | Medium | File Parsing | Untrusted PDFs/DOCX parsed without sandboxing | Open – sandbox parsers |
