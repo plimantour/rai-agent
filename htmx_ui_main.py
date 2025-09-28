@@ -174,10 +174,7 @@ MODELS_INITIALIZED = False
 MODELS_LOCK = threading.Lock()
 ALLOW_LIST_CACHE: Dict[str, object] = {"value": set(), "timestamp": 0.0}
 ALLOW_LIST_TTL = 300.0  # seconds
-ADMIN_USERS = [name.strip() for name in os.getenv(
-    "RAI_ADMIN_USERS",
-    "Philippe Limantour;Philippe Limantour (NTO/NSO);Philippe Beraud"
-).split(";") if name.strip()]
+ADMIN_LIST_CACHE: Dict[str, object] = {"value": set(), "timestamp": 0.0}
 
 SETTINGS_DIR = BASE_DIR / "user-settings"
 SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -256,6 +253,34 @@ def load_allow_list() -> List[str]:
     return entries
 
 
+def load_allow_admin_list() -> List[str]:
+    now = time.time()
+    cached = ADMIN_LIST_CACHE["value"]
+    if cached and now - ADMIN_LIST_CACHE["timestamp"] < ALLOW_LIST_TTL:
+        return list(cached)
+    entries: List[str] = []
+    skip_kv_admin_list = (
+        os.getenv("SKIP_KEYVAULT_FOR_TESTS", "").lower() in ("1", "true", "yes")
+        or _env_bool("HTMX_ALLOW_DEV_BYPASS", False)
+    )
+    if not skip_kv_admin_list:
+        try:
+            result = get_from_keyvault(['RAI-ASSESSMENT-ADMINS'])
+            if result and 'RAI-ASSESSMENT-ADMINS' in result:
+                entries = [item.strip() for item in result['RAI-ASSESSMENT-ADMINS'].split(';') if item.strip()]
+        except Exception as exc:
+            log.warning("Unable to retrieve admin list from Key Vault: %s", exc)
+    else:
+        log.info("HTMX dev/test mode active – skipping Key Vault admin list fetch and using fallback values")
+    if not entries:
+        fallback = os.getenv("HTMX_FALLBACK_ADMIN_LIST", "")
+        if fallback:
+            entries = [item.strip() for item in re.split(r"[;,]", fallback) if item.strip()]
+    ADMIN_LIST_CACHE["value"] = set(entries)
+    ADMIN_LIST_CACHE["timestamp"] = now
+    return entries
+
+
 async def resolve_user(request: Request, session: SessionState) -> UserContext:
     principal_header = request.headers.get("x-ms-client-principal") or request.headers.get("X-MS-CLIENT-PRINCIPAL")
     payload = _decode_principal(principal_header) if principal_header else None
@@ -288,11 +313,13 @@ async def resolve_user(request: Request, session: SessionState) -> UserContext:
         return UserContext(user_id="", display_name="", preferred_username=None, authorized=False, is_admin=False)
 
     allow_list = load_allow_list()
-    authorized = display_name in allow_list or preferred_username in allow_list or user_id in allow_list
+    identifiers = (display_name, preferred_username, user_id)
+    authorized = any(identifier and identifier in allow_list for identifier in identifiers)
+    admin_list = load_allow_admin_list()
+    is_admin = any(identifier and identifier in admin_list for identifier in identifiers)
     if allow_dev_bypass and is_local_request and not authorized:
         log.info("Granting local dev bypass access for %s", preferred_username or display_name or user_id)
         authorized = True
-    is_admin = display_name in ADMIN_USERS
     if allow_dev_bypass and is_local_request and not is_admin:
         if _env_bool("HTMX_DEV_IS_ADMIN", False):
             is_admin = True
@@ -712,8 +739,10 @@ async def establish_session(request: Request, payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Incomplete profile information")
 
     allow_list = load_allow_list()
-    authorized = display_name in allow_list or (preferred_username in allow_list if preferred_username else False) or user_id in allow_list
-    is_admin = display_name in ADMIN_USERS
+    identifiers = (display_name, preferred_username, user_id)
+    authorized = any(identifier and identifier in allow_list for identifier in identifiers)
+    admin_list = load_allow_admin_list()
+    is_admin = any(identifier and identifier in admin_list for identifier in identifiers)
     user = UserContext(
         user_id=user_id,
         display_name=display_name,

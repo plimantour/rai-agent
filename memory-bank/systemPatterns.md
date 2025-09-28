@@ -6,7 +6,7 @@ High-Level Layers:
 1. Ingestion Layer: CLI (`main.py`), Streamlit UI (`streamlit_ui_main.py`), and HTMX/FastAPI UI (`htmx_ui_main.py`)
 2. Orchestration & Prompt Pipeline: `prompts/prompts_engineering_llmlingua.py`
 3. Processing Utilities: document mutation (`helpers/docs_utils.py`), caching (`helpers/cache_completions.py`), pricing (`helpers/completion_pricing.py`), auth/session (`helpers/user_auth.py`), blob/keyvault integration (`helpers/blob_cache.py`)
-4. Persistence / External Services: Azure OpenAI / Mistral (LLM), Azure Key Vault (secrets + config), Azure Blob (logs & allow‑list), Local FS (cache, outputs)
+4. Persistence / External Services: Azure OpenAI / Mistral (LLM), Azure Key Vault (secrets + config, allow/admin rosters), Azure Blob (logs & allow‑list), Local FS (cache, outputs)
 5. Presentation: Streamlit reactive components (progress, download, parameter toggles) plus HTMX partials with polling-driven progress feed, toast queue, and shared static assets
 
 Data Flow (UI path):
@@ -18,6 +18,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 - Token replacement via direct DOCX paragraph + table traversal avoids template pre-compilation; trades speed for simplicity.
 - Local pickle cache keyed by composite hash reduces repeated LLM costs; simplicity preferred over distributed cache in MVP.
 - Keyless Azure AD auth chosen over static keys (security posture improvement) where supported.
+- Allow and admin rosters centralized in Key Vault secrets so access can be rotated without code changes.
 - Optional llmlingua compression controlled per-run to manage risk of semantic loss.
 - Bias / risk analysis separated from generation (distinct functions) enabling optional pre-flight validation.
 
@@ -34,7 +35,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 
 | Component | Depends On | Provides |
 |-----------|------------|----------|
-| `htmx_ui_main.py` | helpers.*, prompts.*, `templates/htmx/*`, `static/js/app.js` | HTMX/FastAPI UI endpoints, live progress poller, toast dedupe orchestration |
+| `htmx_ui_main.py` | helpers.*, prompts.*, `templates/htmx/*`, `static/js/app.js` | HTMX/FastAPI UI endpoints, live progress poller, toast dedupe orchestration, Key Vault allow/admin roster loaders |
 | `streamlit_ui_main.py` | helpers.*, prompts.* | User interaction, progress, output delivery |
 | `main.py` | prompts module, docs_utils | CLI doc generation |
 | `prompts_engineering_llmlingua.py` | helpers.*, llmlingua, openai | Orchestrates multi-step LLM workflow |

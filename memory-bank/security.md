@@ -35,6 +35,7 @@
 - **Stored progress cleanup:** After analysis/generation completes, `session.live_progress` and `progress_pending_toasts` are cleared, preventing stale or attacker-supplied messages from resurfacing in later sessions.
 - **Azure Entra ID authentication flow:** `/auth/session` validates Microsoft Entra tokens via Graph, ensures allow-list membership before granting access, and restricts the development bypass to explicit localhost opt-in.
 - **Key Vault-backed allow list:** Authorized user identities are sourced from the `RAI-ASSESSMENT-USERS` secret in Azure Key Vault (with controlled fallbacks), allowing centralized access management without code changes.
+- **Key Vault-backed admin roster:** Admin privileges now derive from the `RAI-ASSESSMENT-ADMINS` secret in Azure Key Vault (cached with fallbacks), so rotating admin access no longer requires redeploying the app.
 - **Admin-gated logging:** Session log level defaults to "None"; only Entra-verified admins may toggle logging from the settings modal, limiting diagnostics exposure to trusted operators.
 - **Sanitized LLM rendering:** `render_markdown_safe` now funnels all LLM content through `bleach.clean`, preserving a controlled HTML allowlist and stripping scripts/unsafe attributes before response rendering.
 - **Toast hardening:** Backend toast payloads are HTML-escaped and normalized, while the frontend renders via `textContent` with duplicate-suppression to block XSS vectors and message replay.
@@ -56,4 +57,5 @@
 | Low | Output Retention | Generated artifacts linger on disk | Open – enforce retention |
 | Low | Progress Hooks | Progress messages sanitized | Implemented |
 | Low | AuthN/AuthZ | Entra ID login + Key Vault allow list | Implemented |
+| Low | Admin Controls | Admin roster sourced from Key Vault secret | Implemented |
 | Low | Logging Controls | Diagnostics disabled by default; admin-only toggle | Implemented |

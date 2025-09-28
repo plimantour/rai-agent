@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 2025-09-28
+### Added
+- Key Vault-backed admin roster loader that resolves privileged users from the `RAI-ASSESSMENT-ADMINS` secret (with caching and fallback env support) so admin rotation no longer requires code changes.
+
+### Changed
+- Admin authorization now matches display name, UPN, or object ID against both allow and admin lists, reusing the same caching + Key Vault retrieval path as the standard allow list while retaining the localhost-only dev bypass toggle.
+
 ## 2025-09-27
 ### Added
 - HTMX dashboard progress feed partial with `/progress` polling so in-flight `ui_hook` messages surface in real time (step list + toast queue).
