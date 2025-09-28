@@ -10,7 +10,7 @@ High-Level Layers:
 5. Presentation: Streamlit reactive components (progress, download, parameter toggles) plus HTMX partials with polling-driven progress feed, toast queue, and shared static assets
 
 Data Flow (UI path):
-Upload DOCX → Extract raw text → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
+Upload DOCX → Extract raw text → Run Azure Content Safety Prompt Shields (helpers/content_safety.py; managed identity, retry/cache) → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
 
 ## Key Technical Decisions
 
@@ -19,8 +19,10 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 - Local pickle cache keyed by composite hash reduces repeated LLM costs; simplicity preferred over distributed cache in MVP.
 - Keyless Azure AD auth chosen over static keys (security posture improvement) where supported.
 - Allow and admin rosters centralized in Key Vault secrets so access can be rotated without code changes.
+- Azure Content Safety Prompt Shields enforce pre-ingestion scanning using managed identity-authenticated REST calls; helper caches verdicts to reduce duplicate scans and surfaces developer-friendly diagnostics.
 - Optional llmlingua compression controlled per-run to manage risk of semantic loss.
 - Bias / risk analysis separated from generation (distinct functions) enabling optional pre-flight validation.
+- HTMX UI hardened with per-session CSRF tokens and session-scoped toast dedupe to avoid replay.
 
 ## Design Patterns
 
@@ -30,6 +32,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 - Template Method (partial): `get_azure_openai_completion` + adaptive reasoning helper (param fallback, unsupported param stripping, cost integration).
 - Token Replacement Strategy: Two passes (collect vs. incremental update if `update_steps=True`).
 - Defensive Parsing: `get_json_from_answer` attempts normalization & reshaping when model output deviates.
+- Security Gate: Prompt Shield helper throws typed exceptions that short-circuit the pipeline before unsafe content reaches prompts.
 
 ## Component Relationships
 
@@ -46,6 +49,7 @@ Upload DOCX → Extract raw text → Initialize models (credential + endpoints) 
 | `helpers/completion_pricing.py` | static pricing table | Cost estimation |
 | `static/js/app.js` | Bootstrap toasts, HTMX events, `htmx_ui_main.py` data attributes | Client-side toast rendering, dedupe suppression, progress UX glue |
 | `templates/htmx/partials/*` | Jinja context from `htmx_ui_main.py` | Shared partials for progress feed, settings modal, and build metadata display |
+| `helpers/content_safety.py` | azure.identity, requests | Managed identity auth, prompt shield payload assembly, caching/verdict interpretation |
 
 Scalability Considerations:
 - Current single-instance assumptions (local cache, no locking)
@@ -54,6 +58,7 @@ Scalability Considerations:
 
 Resilience Gaps:
 - Limited retry/backoff; broad exception catches reduce observability.
+- Prompt Shield service errors currently bubble to users after retry; consider queueing + admin alerting.
 - No circuit breaker around LLM provider errors.
 - Adaptive reasoning fallback uses broad exception capture (risk: masks credential/quota errors) – requires refinement (simplified after removing forced output cap).
 

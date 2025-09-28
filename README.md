@@ -7,8 +7,34 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.template .env
-# Edit .env with your Azure OpenAI / Key Vault / Storage values
+# Edit .env with your Azure OpenAI / Key Vault / Storage / Content Safety values
 ```
+
+### Environment Configuration
+
+`/.env.template` mirrors every setting consumed by the app. After copying it to `.env`, provide tenant-specific values for the entries below (placeholders show required format):
+
+| Variable | Purpose | Notes |
+| --- | --- | --- |
+| `AZURE_KEYVAULT_URL` | Key Vault URI that stores secrets and allow/admin lists | Required |
+| `AZURE_TENANT_ID` | Microsoft Entra tenant GUID | Required |
+| `AZURE_APP_REGISTRATION_CLIENT_ID` | Client ID of the app registration used for login | Required |
+| `AZURE_CONTAINER_MANAGED_IDENTITY` | Client ID of the Container App managed identity | Optional for local dev; populated automatically in Azure |
+| `AZURE_REDIRECT_URI` | Redirect URI registered for the HTMX UI | Use container app FQDN or local URL |
+| `AZURE_STORAGE_ACCOUNT_NAME` | Blob storage for assessment artifacts/logs | Required |
+| `AZURE_STORAGE_CONTAINER_NAME` | Default blob container name | `assessments` by default |
+| `AZURE_OPENAI_API_TYPE` | Usually `azure` | Required |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint | Required |
+| `AZURE_OPENAI_API_VERSION` | API version to call (e.g. `2024-08-01-preview`) | Required |
+| `AZURE_OPENAI_GPT_DEPLOYMENT` | Deployment name for GPT model | Required |
+| `AZURE_CONTENT_SAFETY_ENDPOINT` | Content Safety resource endpoint | Required; use the custom subdomain (`https://<resource>.cognitiveservices.azure.com`) so managed identities succeed |
+| `AZURE_CONTENT_SAFETY_API_VERSION` | Content Safety API version (`2024-09-01`) | Required |
+| `AZURE_CONTENT_SAFETY_DISABLED` | Set to `1` only to bypass Prompt Shields during local testing | Leave unset or `0` in production |
+| `SHOW_REASONING_SUMMARY_DEFAULT` et al. | UI feature flags for reasoning summaries | Optional |
+| `HTMX_FALLBACK_ALLOW_LIST` / `HTMX_FALLBACK_ADMIN_LIST` | Comma/semicolon separated allow/admin list fallback values | Optional for local development |
+| `HTMX_ALLOW_DEV_BYPASS` and related `HTMX_DEV_*` | Opt-in local auth bypass | Never enable in shared environments |
+
+The Container Apps provisioning script (`azure-container-apps/1-setup_app-raiassessment.sh`) auto-creates the Content Safety account (if missing) and assigns the managed identity the `Cognitive Services OpenAI User` and `Cognitive Services User` roles. End users do **not** require these roles; they only need to authenticate through the app registration and appear in `RAI-ASSESSMENT-USERS` (and `RAI-ASSESSMENT-ADMINS` for admin features).
 
 ## 🏃 Running & Deployment
 
@@ -122,6 +148,27 @@ REASONING_VERBOSITY=low                    # low | medium | high (GPT-5 verbosit
 ```
 Fallback: if the Responses API still fails (e.g., throttling, unsupported model), the code reverts to Chat Completions—no summary, but the final answer is preserved and logged.
 
+## 🛡️ Content Safety Prompt Shields
+The FastAPI upload and analysis flows call Azure Content Safety `text:shieldPrompt` for every document using the managed identity. Payloads follow the REST contract exactly (`userPrompt` as a string and `documents` as an array of strings); changing this structure will yield `InvalidRequestBody` responses.
+
+### Manual Verification (curl)
+When debugging managed identity issues, request an access token and invoke the endpoint directly:
+
+```bash
+TOKEN=$(az account get-access-token --resource https://cognitiveservices.azure.com/.default --query accessToken -o tsv)
+ENDPOINT=https://<your-resource>.cognitiveservices.azure.com
+curl -sS \
+  -X POST "$ENDPOINT/contentsafety/text:shieldPrompt?api-version=2024-09-01" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userPrompt": "Example prompt to scan",
+    "documents": ["Sample document text to vet"]
+  }'
+```
+
+Expect `attackDetected: false` for benign content. Substitute `documents` with any strings you need to vet; omit the array entirely if you only want to scan the user prompt. Re-run the container or redeploy after updating `helpers/content_safety.py` or environment variables so the managed identity picks up changes.
+
 ## 📦 Caching & Reproducibility
 Local pickle cache (key = hash(model|language|prompt|temperature|compression)).
 Recommended before scale-out: migrate to Redis (Azure Cache) with TTL + optimistic locking.
@@ -130,6 +177,8 @@ Recommended before scale-out: migrate to Redis (Azure Cache) with TTL + optimist
 - MSAL-based login component populates user session
 - Allow‑list retrieved from Key Vault
 - Keyless Azure AD (DefaultAzureCredential) preferred; Azure Key Vault holds endpoints
+- All downstream Azure calls (OpenAI, Content Safety Prompt Shields, Blob Storage, Key Vault) execute with the container app's managed identity. The app never impersonates end users.
+- Azure Content Safety Prompt Shields run against every uploaded/analyzed document. Set `AZURE_CONTENT_SAFETY_DISABLED=1` only for local testing scenarios where the API is unavailable.
 
 ## 📊 Observability (Current & Planned)
 Current:

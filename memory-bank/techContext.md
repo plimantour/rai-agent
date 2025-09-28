@@ -6,11 +6,12 @@
 - Streamlit (UI shell)
 - FastAPI + HTMX (alternate UI shell with shared templates/static assets)
 - MSAL.js + Microsoft Graph (interactive auth flow shared across UIs)
-- Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint
- - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
+- Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
+- Azure Content Safety Prompt Shields (managed identity auth, custom subdomain endpoint)
 - Azure Identity (DefaultAzureCredential) for keyless auth
 - Azure Key Vault (secret & endpoint retrieval)
 - Azure Blob Storage (logs, user allow‑list text, misc data)
+- Bleach (server-side sanitization for HTMX-rendered markup)
 - llmlingua2 (prompt compression)
 - pdfminer / docx2txt / python-docx (content extraction & templating)
 - zipfile / io for packaging outputs
@@ -25,13 +26,15 @@ Baseline Steps:
 4. Run CLI: `python main.py -i <folder>` (expects `solution_description.docx` inside folder)
 5. Or UIs:
 	- Streamlit: `python -m streamlit run streamlit_ui_main.py --server.port 8000`
-	- HTMX/FastAPI: `python htmx_ui_main.py` (serves MSAL login and mirrored workflow on port 8501 by default)
+	- HTMX/FastAPI: `uvicorn htmx_ui_main:app --host 0.0.0.0 --port 8001`
 
 Environment Variables (representative):
 - `AZURE_KEYVAULT_URL`
 - `AZURE_OPENAI_API_TYPE` ("azure" or other)
 - `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_GPT_DEPLOYMENT` / `AZURE_OPENAI_API_VERSION`
+- `AZURE_CONTENT_SAFETY_ENDPOINT` / `AZURE_CONTENT_SAFETY_API_VERSION` / `AZURE_CONTENT_SAFETY_DISABLED`
 - `AZURE_TENANT_ID`, `AZURE_APP_REGISTRATION_CLIENT_ID`, `AZURE_REDIRECT_URI`
+- `HTMX_ALLOW_DEV_BYPASS`, `HTMX_DEV_USER_ID`, `HTMX_DEV_USER_NAME`, `HTMX_DEV_USER_UPN`
 - `MSAL_CLIENT_ID`, `MSAL_TENANT_ID`, `MSAL_REDIRECT_URI` (frontend-configured; typically mirror the backend values)
 - Storage: `AZURE_STORAGE_ACCOUNT_NAME`
 
@@ -39,6 +42,7 @@ Key Vault Secret Names (observed):
 - `AZURE-OPENAI-ENDPOINT` (when keyless) / alternative Mistral secrets
 - `MISTRAL-OPENAI-ENDPOINT`, `MISTRAL-OPENAI-API-KEY`
 - `RAI-ASSESSMENT-USERS`
+- `RAI-ASSESSMENT-ADMINS`
 
 ## Technical constraints
 
@@ -62,4 +66,6 @@ Potential Enhancements:
  - Deeper recursive reasoning extraction (structured segments + safe redaction)
  - Automatic retry logic for empty reasoning responses (single bounded attempt)
  - Combine access + system logs into unified on-demand archive with metadata manifest
+- Implement structured notifications when prompt shield blocks content (admin alerting path)
+- Add automated health check for Content Safety endpoint (managed identity probe + curl payload) to detect custom domain drift
 

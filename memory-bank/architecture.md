@@ -3,10 +3,10 @@
 ## 1. High-Level Layers
 | Layer | Components | Responsibility |
 |-------|------------|----------------|
-| Presentation | `streamlit_ui_main.py` | User interaction, authentication, progress UI, admin model & reasoning selection |
+| Presentation | `streamlit_ui_main.py`, `htmx_ui_main.py` | Streamlit and HTMX/FastAPI surfaces (MSAL auth, progress UX, admin model & reasoning selection, prompt shield gating, CSRF validation) |
 | CLI | `main.py` | Headless batch generation of RAI assessment drafts |
 | Orchestration / Pipeline | `prompts/prompts_engineering_llmlingua.py` | Multi-step prompt execution, adaptive reasoning parameter handling, caching & cost accumulation |
-| Utilities | `helpers/*.py` | DOCX manipulation, pricing, caching, auth, blob logging, Key Vault access |
+| Utilities | `helpers/*.py` | DOCX manipulation, pricing, caching, auth, blob logging, Key Vault access, Content Safety prompt shielding |
 | Model / Pricing Metadata | `helpers/completion_pricing.py` | Legacy + extended metadata (context window, reasoning flag, pricing incl. cached & reasoning tokens) |
 | Persistence / External | Azure OpenAI, Key Vault, Blob Storage, (future Redis) | Model inference, secret storage, logging, shared cache (planned) |
 | Templates / Assets | `rai-template/*.docx` | Master DOCX templates (internal + public) |
@@ -15,6 +15,7 @@
 ```
 User Uploads DOCX
   → Extract text (docs_utils)
+    → Run Content Safety Prompt Shields (helpers/content_safety.py using managed identity)
     → Initialize models (DefaultAzureCredential + Key Vault)
       → (Admin) Select model & reasoning effort
         → Sequential generation steps (prompts module)
@@ -83,6 +84,8 @@ Adaptive invocation attempts a superset of safe parameters then progressively st
 - Keyless auth via managed identity (preferred)
 - Key Vault for secret indirection (no raw secrets in repo)
 - Allow‑list gating admin actions (model selection)
+- Azure Content Safety Prompt Shields block unsafe uploads before generation; custom subdomain required for managed identity.
+- Per-session CSRF tokens enforced across HTMX POST endpoints.
 - TODO: Rate limiting & input size bounds
 
 ## 11. Extensibility Hooks

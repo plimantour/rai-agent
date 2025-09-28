@@ -46,6 +46,12 @@ from helpers.docs_utils import (extract_text_from_input, generate_unique_identif
                                 save_text_to_docx)
 from helpers.logging_setup import get_logger, init_logging, set_log_level
 from helpers.completion_pricing import is_reasoning_model, model_pricing_euros
+from helpers.content_safety import (
+    PromptShieldAttackDetected,
+    PromptShieldConfigurationError,
+    PromptShieldServiceError,
+    ensure_uploaded_text_safe,
+)
 from prompts.prompts_engineering_llmlingua import (get_last_reasoning_summary,
                                                    initialize_ai_models,
                                                    last_reasoning_fallback_used,
@@ -1019,6 +1025,11 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
         return response
     filename_root, text = _extract_text_from_upload(file)
     display_name = file.filename or f"{filename_root}.docx"
+    if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
     _set_stored_solution(session, display_name, text)
     session.messages.append(f"Stored '{display_name}' for reuse.")
     try:
@@ -1060,6 +1071,11 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     if file:
         filename_root, text = _extract_text_from_upload(file)
         display_name = file.filename or f"{filename_root}.docx"
+        if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+            response = render_dashboard(request, session, user, partial=True)
+            if created:
+                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+            return response
         _set_stored_solution(session, display_name, text)
     else:
         text = session.stored_solution_text
@@ -1071,6 +1087,13 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
             return response
         filename_root = _stored_solution_root(session)
         display_name = session.stored_solution_filename or "Stored solution description"
+        if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+            session.stored_solution_text = None
+            session.stored_solution_filename = None
+            response = render_dashboard(request, session, user, partial=True)
+            if created:
+                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+            return response
 
     session.live_progress = []
     session.progress_pending_toasts = []
@@ -1406,3 +1429,45 @@ if __name__ == "__main__":
     import uvicorn  # type: ignore
 
     uvicorn.run("htmx_ui_main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8001")), reload=_env_bool("UVICORN_RELOAD", False))
+
+
+async def _validate_solution_text_with_prompt_shield(
+    session: SessionState,
+    text: str,
+    label: str,
+) -> bool:
+    if not text:
+        return True
+
+    def _scan() -> "PromptShieldResult":
+        return ensure_uploaded_text_safe(text, label=label)
+
+    try:
+        result = await run_in_threadpool(_scan)
+    except PromptShieldConfigurationError as exc:
+        log.error("Prompt Shield configuration error for %s: %s", label, exc)
+        session.messages.append(
+            "Upload blocked: Azure Content Safety configuration is incomplete. Please contact an administrator."
+        )
+        return False
+    except PromptShieldServiceError as exc:
+        log.error("Prompt Shield service error for %s: %s", label, exc)
+        session.messages.append(
+            "Upload blocked: Azure Content Safety could not validate the document. Try again later."
+        )
+        return False
+    except PromptShieldAttackDetected as exc:
+        log.warning("Prompt Shield blocked %s: %s", label, exc)
+        session.messages.append(
+            "Azure Content Safety detected a potential prompt injection in the uploaded document."
+        )
+        session.messages.append(str(exc))
+        return False
+
+    log.info(
+        "Azure Content Safety cleared %s (shield=%s confidence=%s)",
+        label,
+        getattr(result, "shielding_type", None),
+        getattr(result, "confidence", None),
+    )
+    return True

@@ -6,10 +6,12 @@
 ### Added
 - Key Vault-backed admin roster loader that resolves privileged users from the `RAI-ASSESSMENT-ADMINS` secret (with caching and fallback env support) so admin rotation no longer requires code changes.
 - Per-session CSRF tokens injected via meta tags/hidden fields and attached to all HTMX requests, blocking cross-site POST attempts across auth, uploads, settings, and admin endpoints.
+- Documentation on verifying Azure Content Safety managed identity access with curl against the custom subdomain endpoint to aid troubleshooting.
 
 ### Changed
 - Admin authorization now matches display name, UPN, or object ID against both allow and admin lists, reusing the same caching + Key Vault retrieval path as the standard allow list while retaining the localhost-only dev bypass toggle.
 - Frontend `app.js` now adds the CSRF header on every HTMX request; server routes enforce validation before executing side effects.
+- `helpers/content_safety.py` now sends `userPrompt` and `documents` as strings per the REST contract, refreshes the cache key with document hashes, and surfaces `documentsAnalysis` results consistently while targeting the resource's dedicated custom domain so managed identity calls avoid 400 responses.
 
 ## 2025-09-27
 ### Added

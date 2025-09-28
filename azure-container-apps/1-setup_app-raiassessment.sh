@@ -32,6 +32,10 @@ CONTAINER_ENV_NAME=${CONTAINER_APP_NAME}-env
 LOG_ANALYTICS_WORKSPACE_NAME=${LOG_ANALYTICS_WORKSPACE_NAME:-${CONTAINER_APP_NAME}-logs}
 LOG_ANALYTICS_RESOURCE_GROUP=${LOG_ANALYTICS_RESOURCE_GROUP:-$RESOURCE_GROUP}
 KEYVAULT_RESOURCE_GROUP=${KEYVAULT_RESOURCE_GROUP:-$AZURE_OPENAI_RESOURCE_GROUP}
+AZURE_CONTENT_SAFETY_RESOURCE=${AZURE_CONTENT_SAFETY_RESOURCE:-cto-contentsafety-swedencentral}
+AZURE_CONTENT_SAFETY_RESOURCE_GROUP=${AZURE_CONTENT_SAFETY_RESOURCE_GROUP:-$AZURE_OPENAI_RESOURCE_GROUP}
+CONTENT_SAFETY_LOCATION=${CONTENT_SAFETY_LOCATION:-$LOCATION}
+CONTENT_SAFETY_SKU=${CONTENT_SAFETY_SKU:-S0}
 
 log_section() {
     printf '\n=== %s ===\n' "$1"
@@ -158,11 +162,53 @@ ensure_role_assignment() {
     fi
 }
 
+ensure_content_safety_account() {
+    if az cognitiveservices account show \
+        --name "$AZURE_CONTENT_SAFETY_RESOURCE" \
+        --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" >/dev/null 2>&1; then
+        echo "Azure Content Safety account $AZURE_CONTENT_SAFETY_RESOURCE already exists."
+    else
+        echo "Creating Azure Content Safety account $AZURE_CONTENT_SAFETY_RESOURCE..."
+        az cognitiveservices account create \
+            --name "$AZURE_CONTENT_SAFETY_RESOURCE" \
+            --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" \
+            --kind ContentSafety \
+            --sku "$CONTENT_SAFETY_SKU" \
+            --location "$CONTENT_SAFETY_LOCATION" \
+            --yes \
+            --tags project=rai-assessment >/dev/null
+        echo "Azure Content Safety account $AZURE_CONTENT_SAFETY_RESOURCE created."
+    fi
+}
+
+ensure_content_safety_custom_domain() {
+    local expected_domain current_domain
+    expected_domain="$AZURE_CONTENT_SAFETY_RESOURCE"
+    current_domain=$(az cognitiveservices account show \
+        --name "$AZURE_CONTENT_SAFETY_RESOURCE" \
+        --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" \
+        --query "properties.customSubDomainName" \
+        --output tsv 2>/dev/null || true)
+    if [ "$current_domain" = "$expected_domain" ]; then
+        echo "Content Safety custom domain $expected_domain already configured."
+    else
+        echo "Configuring Content Safety custom domain $expected_domain..."
+        az cognitiveservices account update \
+            --name "$AZURE_CONTENT_SAFETY_RESOURCE" \
+            --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" \
+            --custom-domain "$expected_domain" >/dev/null
+    fi
+}
+
 log_section "Resource group"
 ensure_resource_group
 
 log_section "Log Analytics workspace"
 ensure_log_analytics_workspace
+
+log_section "Azure Content Safety account"
+ensure_content_safety_account
+ensure_content_safety_custom_domain
 
 log_section "Container Apps environment"
 ensure_container_environment
@@ -194,6 +240,12 @@ OPENAI_SCOPE=$(az cognitiveservices account show \
     --resource-group "$AZURE_OPENAI_RESOURCE_GROUP" \
     --query id --output tsv)
 ensure_role_assignment "Cognitive Services OpenAI User" "$OPENAI_SCOPE"
+
+CONTENT_SAFETY_SCOPE=$(az cognitiveservices account show \
+    --name "$AZURE_CONTENT_SAFETY_RESOURCE" \
+    --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" \
+    --query id --output tsv)
+ensure_role_assignment "Cognitive Services User" "$CONTENT_SAFETY_SCOPE"
 
 KEYVAULT_SCOPE=$(az keyvault show \
     --name "$KEYVAULT_NAME" \

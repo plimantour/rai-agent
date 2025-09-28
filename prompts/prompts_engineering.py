@@ -1,4 +1,3 @@
-
 # Philippe Limantour - March 2024
 # This file contains the prompts engineering methods for drafting a Responsible AI Assessment from a solution description
 

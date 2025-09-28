@@ -4,7 +4,7 @@
 
 - **High – Untrusted LLM output rendered as HTML:** `analysis_result.html|safe` injects Azure OpenAI responses directly into the DOM. Malicious or poisoned outputs could contain `<script>` or other dangerous markup, leading to stored/ reflected XSS.
 - **High – Toast notifications use `innerHTML`:** `static/js/app.js` inserts toast messages via `innerHTML`. Messages that originate from user-controlled identifiers (e.g., Azure AD display names) could execute script if not sanitized.
-- **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs without current guardrails.
+- **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs. Azure Content Safety Prompt Shields now screen uploads, but additional defense-in-depth (guard prompts, allowlisting) remains outstanding.
 - **Medium – Graph access token validation gap:** `/auth/session` only checks that a token can call Microsoft Graph. It does not verify issuer, audience/client ID, or signature, so tokens minted for other apps with delegated scopes could impersonate users.
 - **Medium – File upload pipeline lacks guardrails:** `_write_temp_upload` reads entire files into memory and accepts DOCX/PDF/JSON/TXT without size limits or deep validation, opening the door to DoS (oversized or decompression-bomb uploads) or dangerous payloads processed downstream.
 - **Medium – Document parser attack surface:** `pdfminer` and `docx2txt` run on untrusted user uploads; crafted docs could exploit parser vulnerabilities or exhaust resources.
@@ -39,6 +39,8 @@
 - **Sanitized LLM rendering:** `render_markdown_safe` now funnels all LLM content through `bleach.clean`, preserving a controlled HTML allowlist and stripping scripts/unsafe attributes before response rendering.
 - **Toast hardening:** Backend toast payloads are HTML-escaped and normalized, while the frontend renders via `textContent` with duplicate-suppression to block XSS vectors and message replay.
 - **CSRF tokens enforced:** Each session now issues a cryptographically random token stored in server memory, injected into forms/meta tags, attached to HTMX headers, and validated on every state-changing POST (including auth, uploads, settings, and admin endpoints).
+- **Prompt shield pre-checks:** `helpers/content_safety.ensure_uploaded_text_safe` runs Azure Content Safety Prompt Shields against every uploaded/analysis document with retries, caching, and managed identity authentication; unsafe content is rejected with user-visible messaging.
+- **Managed identity-only data plane access:** All calls to Azure OpenAI, Content Safety, Key Vault, and Blob Storage use the container app's managed identity; end-user tokens are never forwarded, reducing impersonation risk.
 
 ## Backend Threat Summary
 
