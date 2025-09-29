@@ -280,7 +280,41 @@ body.theme-dark textarea::placeholder {
     background: #f4f6ff;
     border-radius: 8px;
     padding: 0.8rem;
-    white-space: pre-wrap;
+    white-space: normal;
+    line-height: 1.55;
+}
+
+.result .scrollable h1,
+.result .scrollable h2,
+.result .scrollable h3,
+.result .scrollable h4,
+.result .scrollable h5,
+.result .scrollable h6 {
+    margin: 0.9rem 0 0.4rem;
+    line-height: 1.35;
+}
+
+.result .scrollable h1:first-child,
+.result .scrollable h2:first-child,
+.result .scrollable h3:first-child,
+.result .scrollable h4:first-child,
+.result .scrollable h5:first-child,
+.result .scrollable h6:first-child {
+    margin-top: 0;
+}
+
+.result .scrollable p {
+    margin: 0.45rem 0;
+}
+
+.result .scrollable ul,
+.result .scrollable ol {
+    margin: 0.4rem 0 0.6rem 1.2rem;
+    padding-left: 1.1rem;
+}
+
+.result .scrollable li {
+    margin: 0.25rem 0;
 }
 
 body.theme-dark .result .scrollable {

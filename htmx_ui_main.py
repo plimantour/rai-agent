@@ -49,6 +49,7 @@ from helpers.completion_pricing import is_reasoning_model, model_pricing_euros
 from helpers.content_safety import (
     PromptShieldAttackDetected,
     PromptShieldConfigurationError,
+    PromptShieldResult,
     PromptShieldServiceError,
     ensure_uploaded_text_safe,
 )
@@ -622,8 +623,53 @@ def format_progress_messages(messages: List[str]) -> List[Dict[str, str]]:
     return formatted
 
 
+def _normalize_markdown_lists(content: str) -> str:
+    if not content:
+        return ""
+
+    lines = content.splitlines()
+    output: List[str] = []
+    i = 0
+    total = len(lines)
+
+    while i < total:
+        line = lines[i]
+        output.append(line)
+        stripped = line.lstrip()
+
+        if stripped.startswith(("- ", "* ")) and stripped.rstrip().endswith(":"):
+            base_indent = len(line) - len(stripped)
+            i += 1
+
+            while i < total:
+                next_line = lines[i]
+                next_stripped = next_line.lstrip()
+                indent = len(next_line) - len(next_stripped)
+
+                if not next_stripped:
+                    output.append(next_line)
+                    i += 1
+                    continue
+
+                if indent <= base_indent:
+                    break
+
+                if next_stripped.startswith(("- ", "* ")) and indent < base_indent + 4:
+                    next_line = " " * (base_indent + 4) + next_stripped
+
+                output.append(next_line)
+                i += 1
+
+            continue
+
+        i += 1
+
+    return "\n".join(output)
+
+
 def render_markdown_safe(content: Optional[str]) -> str:
-    raw_html = markdown.markdown(content or "", extensions=["fenced_code", "tables"])
+    normalized = _normalize_markdown_lists(content or "")
+    raw_html = markdown.markdown(normalized, extensions=["fenced_code", "tables"])
     return bleach.clean(
         raw_html,
         tags=ALLOWED_MARKDOWN_TAGS,
