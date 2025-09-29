@@ -1,0 +1,50 @@
+# Reduce Docker build context while keeping runtime essentials.
+# NOTE: .env is excluded - use sync_env_to_containerapp.sh to set env vars on the container
+# Unused code
+streamlit_ui_main.py
+
+# VCS and tooling metadata
+.env
+.env.template
+.deployment
+.git
+.gitignore
+.gitattributes
+.vscode/
+.streamlit/
+.conda/
+.venv/
+venv/
+env/
+__pycache__/
+.pytest_cache/
+
+# Local caches, logs, and temp artifacts
+user-settings/
+cache/
+logs/
+logs.txt
+tmp/
+.DS_Store
+
+# Deployment and ops scripts (not needed inside runtime image)
+azure-container-apps/
+docker_build_image.sh
+docker_run.sh
+docker-compose.yml
+launch.sh
+run.sh
+ui_launch.sh
+use_azure_keyvault_oaiconfig/
+
+# Documentation, diagnostics, and sample outputs
+memory-bank/
+rai-assessment-output/
+rai-description/
+README.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+
+# Tests and tooling assets for development only
+tests/

@@ -36,6 +36,8 @@ cp .env.template .env
 
 The Container Apps provisioning script (`azure-container-apps/1-setup_app-raiassessment.sh`) auto-creates the Content Safety account (if missing) and assigns the managed identity the `Cognitive Services OpenAI User` and `Cognitive Services User` roles. End users do **not** require these roles; they only need to authenticate through the app registration and appear in `RAI-ASSESSMENT-USERS` (and `RAI-ASSESSMENT-ADMINS` for admin features).
 
+> **Heads-up:** The project `.dockerignore` intentionally excludes `.env` so your secrets never enter the container build context. Use the sync script documented below to publish environment variables to Azure Container Apps instead of copying `.env` into the image.
+
 ## 🏃 Running & Deployment
 
 Common preparatory commands (Azure):
@@ -55,6 +57,22 @@ Supported deployment modes (preferred first):
 1. Create an Entra ID app registration (enable user_impersonation & access to user profile)
 2. Review `/azure-container-apps` scripts for environment / secret expectations
 3. Ensure Key Vault contains required secrets (OpenAI endpoint, users allow‑list, etc.)
+
+#### Sync environment variables to the container app
+Use `azure-container-apps/sync_env_to_containerapp.sh` to push key/value pairs from your local `.env` into the running Azure Container App. Typical flow:
+
+```bash
+az login
+cd azure-container-apps
+./sync_env_to_containerapp.sh --dry-run            # inspect planned changes
+./sync_env_to_containerapp.sh                      # apply updates from ../.env
+```
+
+- `--env-file` points to an alternate dotenv file (defaults to `../.env`)
+- `--exclude` skips specific keys (comma-separated) so secrets handled elsewhere stay untouched
+- `--prune` removes container app settings that no longer exist in the dotenv file
+
+The script requires `az` CLI access to the target subscription and validates the container app before applying changes. Combine with `--dry-run` during reviews to confirm exactly which variables will be added/updated.
 
 ### Local CLI Generation
 Place your solution description DOCX:

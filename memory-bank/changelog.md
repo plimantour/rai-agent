@@ -1,6 +1,12 @@
 # Changelog
 
-# Changelog
+## 2025-09-29
+### Added
+- `.dockerignore` to keep deployment artifacts, docs, and local settings directories out of the container build context while intentionally retaining `.env`.
+- `azure-container-apps/sync_env_to_containerapp.sh` script to sync local `.env` key/value pairs into the Azure Container App (supports dry-run, exclude, and prune flows).
+
+### Fixed
+- HTMX markdown sanitizer now allows heading tags so analysis output renders section titles correctly instead of appearing as bullet points.
 
 ## 2025-09-28
 ### Added

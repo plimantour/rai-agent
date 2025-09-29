@@ -41,6 +41,7 @@
 - **CSRF tokens enforced:** Each session now issues a cryptographically random token stored in server memory, injected into forms/meta tags, attached to HTMX headers, and validated on every state-changing POST (including auth, uploads, settings, and admin endpoints).
 - **Prompt shield pre-checks:** `helpers/content_safety.ensure_uploaded_text_safe` runs Azure Content Safety Prompt Shields against every uploaded/analysis document with retries, caching, and managed identity authentication; unsafe content is rejected with user-visible messaging.
 - **Managed identity-only data plane access:** All calls to Azure OpenAI, Content Safety, Key Vault, and Blob Storage use the container app's managed identity; end-user tokens are never forwarded, reducing impersonation risk.
+- **Container env management:** `.dockerignore` deliberately excludes `.env`; secrets stay local and are projected into Azure via `azure-container-apps/sync_env_to_containerapp.sh` (supports `--dry-run`, `--exclude`, `--prune`). Operators review planned changes before applying and avoid `--prune` unless the dotenv file is canonical for the environment.
 
 ## Backend Threat Summary
 
