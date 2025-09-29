@@ -2,14 +2,17 @@
 # Philippe Limantour - March 2024
 # This file contains the functions to update a word document
 
+import contextlib
+import multiprocessing
+import os
+import queue
+import re
+import time
+import hashlib
+
 from pdfminer.high_level import extract_text
 import docx2txt
 import docx
-import os
-import re
-from termcolor import colored
-import time
-import hashlib
 
 try:
     from termcolor import colored
@@ -57,18 +60,36 @@ def timer_decorator(func):
         return result
     return wrapper
 
+class ExtractionError(Exception):
+    """Raised when sandboxed text extraction fails."""
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw.strip())
+    except (TypeError, ValueError):
+        return default
+
+
+_PARSER_TIMEOUT_SECONDS = max(5, _env_int("UPLOAD_PARSER_TIMEOUT", 30))
+_PARSER_CPU_SECONDS = max(1, _env_int("UPLOAD_PARSER_CPU_SECONDS", 15))
+_PARSER_MEMORY_MB = max(64, _env_int("UPLOAD_PARSER_MEMORY_MB", 512))
+
+
 def extract_text_from_pdf(file):
     return extract_text(file)
+
 
 def extract_text_from_docx(file):
     return docx2txt.process(file)
 
-# Method to extract text from a file - pdf, docx, or txt
-# Returns filename without extension and extracted text
-def extract_text_from_input(file_path):
+
+def _raw_extract_text_from_input(file_path):
     if not os.path.exists(file_path):
-        print(colored(f"File {file_path} does not exist", "red"))
-        return None, None
+        raise ExtractionError(f"File {file_path} does not exist")
 
     filename = os.path.basename(file_path)
     filename_without_extension = os.path.splitext(filename)[0]
@@ -77,19 +98,106 @@ def extract_text_from_input(file_path):
     if extension == ".pdf":
         text = extract_text_from_pdf(file_path)
         return filename_without_extension, text
-    elif extension == ".docx":
+    if extension == ".docx":
         text = extract_text_from_docx(file_path)
         return filename_without_extension, text
-    elif extension == '.txt' or extension == '.json':
+    if extension in {".txt", ".json"}:
         try:
-            with open(file_path, "r") as file:
+            with open(file_path, "r", encoding="utf-8") as file:
                 return filename_without_extension, file.read()
-        except Exception as e:
-            print(colored(f"Error reading file {file_path}:\n{e}", "red"))
-            return None, None
-    else:
-        print(colored(f"Unsupported file type: {extension} for input {file_path}", "red"))
-        return None, None
+        except Exception as exc:  # noqa: BLE001
+            raise ExtractionError(f"Error reading file {file_path}: {exc}") from exc
+
+    raise ExtractionError(f"Unsupported file type: {extension} for input {file_path}")
+
+
+def _apply_resource_limits():
+    if os.name != "posix":  # resource module is POSIX-only
+        return
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - fallback when unavailable
+        return
+
+    cpu = max(1, _PARSER_CPU_SECONDS)
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+    except (ValueError, resource.error):
+        pass
+
+    mem_bytes = max(64 * 1024 * 1024, _PARSER_MEMORY_MB * 1024 * 1024)
+    for limit in (resource.RLIMIT_AS, resource.RLIMIT_DATA):
+        try:
+            resource.setrlimit(limit, (mem_bytes, mem_bytes))
+        except (ValueError, resource.error):
+            continue
+
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+    except (ValueError, resource.error):
+        pass
+
+
+def _sandbox_worker(file_path: str, result_queue: multiprocessing.Queue):
+    try:
+        _apply_resource_limits()
+        filename, text = _raw_extract_text_from_input(file_path)
+        if not text:
+            raise ExtractionError("Unable to read uploaded document")
+        result_queue.put(("ok", filename, text))
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc) or exc.__class__.__name__
+        result_queue.put(("error", message))
+
+
+def _get_mp_context():
+    if hasattr(multiprocessing, "get_context"):
+        for method in ("fork", "spawn"):
+            try:
+                return multiprocessing.get_context(method)
+            except ValueError:
+                continue
+        return multiprocessing.get_context()
+    return multiprocessing
+
+
+def _run_in_sandbox(file_path: str):
+    ctx = _get_mp_context()
+    result_queue: multiprocessing.Queue = ctx.Queue(maxsize=1)
+    process = ctx.Process(target=_sandbox_worker, args=(file_path, result_queue), daemon=True)
+    process.start()
+    process.join(_PARSER_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(1)
+        raise ExtractionError("Document parsing timed out")
+
+    try:
+        outcome = result_queue.get_nowait()
+    except queue.Empty:
+        exit_code = process.exitcode
+        raise ExtractionError(f"Document parsing failed (exit code {exit_code})")
+    finally:
+        with contextlib.suppress(Exception):
+            result_queue.close()
+        with contextlib.suppress(Exception):
+            result_queue.join_thread()
+
+    status = outcome[0]
+    if status == "ok":
+        _, filename, text = outcome
+        return filename, text
+    if status == "error":
+        _, message = outcome
+        raise ExtractionError(message)
+    raise ExtractionError("Unknown parser result")
+
+# Method to extract text from a file - pdf, docx, or txt
+# Returns filename without extension and extracted text
+def extract_text_from_input(file_path):
+    filename, text = _run_in_sandbox(file_path)
+    return filename, text
 
 # Method to extract text from an uploaded file
 def extract_text_from_upload(file):

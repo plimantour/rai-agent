@@ -19,7 +19,7 @@
                        class="file-input sr-only"
                        hx-post="/upload" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML" hx-encoding="multipart/form-data">
                 <label for="solution_file" class="button secondary file-trigger" data-file-trigger role="button" tabindex="0">Choose file</label>
-                <span class="file-placeholder" data-file-placeholder data-default="No file chosen" data-stored="">
+                <span class="file-placeholder" data-file-placeholder data-default="No file chosen" data-stored="{{ session.stored_solution_filename or 'Stored solution description' if session.stored_solution_text else '' }}">
                     {% if session.stored_solution_text %}{% else %}No file chosen{% endif %}
                 </span>
             </div>

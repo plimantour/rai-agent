@@ -2,8 +2,12 @@
 
 ## 2025-09-29
 ### Added
+- Sandboxed PDF/DOCX parsing runs in a resource-limited worker process with env-tunable caps (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`) and unified error handling across HTMX + CLI flows.
 - `.dockerignore` to keep deployment artifacts, docs, and local settings directories out of the container build context while intentionally retaining `.env`.
 - `azure-container-apps/sync_env_to_containerapp.sh` script to sync local `.env` key/value pairs into the Azure Container App (supports dry-run, exclude, and prune flows).
+
+### Changed
+- README and memory-bank documentation call out the new upload guardrail settings and sandbox behaviour, ensuring operators know how to tune limits before redeploying.
 
 ### Fixed
 - HTMX markdown sanitizer now allows heading tags so analysis output renders section titles correctly instead of appearing as bullet points.

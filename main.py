@@ -8,7 +8,7 @@ import shutil
 from prompts.prompts_engineering_llmlingua import update_rai_assessment_template, initialize_ai_models
 from prompts.prompts_engineering_llmlingua import process_solution_description_security_analysis, process_solution_description_analysis
 # from prompts_engineering import update_rai_assessment_template
-from helpers.docs_utils import extract_text_from_input
+from helpers.docs_utils import ExtractionError, extract_text_from_input
 from pprint import pprint
 
 def main():
@@ -30,7 +30,11 @@ def main():
 
     # Get text from the input file
     input_filepath = os.path.join(inputfolder, 'solution_description.docx')
-    input_filename, text = extract_text_from_input(input_filepath)
+    try:
+        input_filename, text = extract_text_from_input(input_filepath)
+    except ExtractionError as exc:
+        print(f"Error reading input file {input_filepath}: {exc}")
+        exit(1)
 
     if not text:
         print(f"Error reading input file {input_filepath}")

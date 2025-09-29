@@ -44,7 +44,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from helpers.blob_cache import append_log_to_blob, get_from_keyvault, read_logs_blob_content
-from helpers.docs_utils import (extract_text_from_input, generate_unique_identifier,
+from helpers.docs_utils import (ExtractionError, extract_text_from_input, generate_unique_identifier,
                                 save_text_to_docx)
 from helpers.logging_setup import get_logger, init_logging, set_log_level
 from helpers.completion_pricing import is_reasoning_model, model_pricing_euros
@@ -1331,6 +1331,8 @@ def _extract_text_from_upload(upload: UploadFile) -> Tuple[str, str]:
     temp_path = _write_temp_upload(upload)
     try:
         filename_root, text = extract_text_from_input(str(temp_path))
+    except ExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         remove_file_safe(str(temp_path))
     if not text:

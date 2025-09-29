@@ -10,7 +10,7 @@ High-Level Layers:
 5. Presentation: Streamlit reactive components (progress, download, parameter toggles) plus HTMX partials with polling-driven progress feed, toast queue, and shared static assets
 
 Data Flow (UI path):
-Upload DOCX → Extract raw text → Run Azure Content Safety Prompt Shields (helpers/content_safety.py; managed identity, retry/cache) → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
+Upload DOCX → Extract raw text inside sandboxed worker (resource caps via `UPLOAD_PARSER_*`) → Run Azure Content Safety Prompt Shields (helpers/content_safety.py; managed identity, retry/cache) → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
 
 ## Key Technical Decisions
 

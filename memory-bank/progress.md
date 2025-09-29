@@ -23,6 +23,7 @@
 - 2025-09-29 (later): Hardened `/auth/session` with offline token validation (signature and claim checks with safe fallback) and confirmed production login works under the stricter validation path.
 - 2025-09-29 (latest): Implemented phased HTMX upload guardrails: Phase 1/2 introduced extension/MIME allow list, chunked streaming to a locked temp dir, size caps, UTF-8 enforcement, optional `python-magic`, DOCX/PDF/JSON/TXT validators, and safer zip packaging; Phase 3 now adds decompression-bomb detection, macro linting, PDF active-content blocking, and an optional malware scan command. Syntax verified via `python -m compileall htmx_ui_main.py`.
 - 2025-09-29 (latest+1): Restricted malware scanning to genuinely new uploads so stored documents skip redundant ClamAV runs, tightened HTMX form submissions to avoid re-posting file inputs, and kept Azure Content Safety verification in place for both new uploads and stored text reuse.
+- 2025-09-29 (latest+2): Sandboxed PDF/DOCX parsing via resource-constrained worker processes (CPU/memory/time caps), surfaced friendly error handling across HTMX and CLI paths, and introduced env toggles (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`) for future tuning.
 
 ## What Works
 

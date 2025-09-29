@@ -34,6 +34,13 @@ cp .env.template .env
 | `HTMX_FALLBACK_ALLOW_LIST` / `HTMX_FALLBACK_ADMIN_LIST` | Comma/semicolon separated allow/admin list fallback values | Optional for local development |
 | `HTMX_ALLOW_DEV_BYPASS` and related `HTMX_DEV_*` | Opt-in local auth bypass | Never enable in shared environments |
 
+#### Upload Guardrail Settings (defaults shown in `.env.template`)
+
+- `UPLOAD_MAX_BYTES` / `UPLOAD_MAX_UNZIPPED_BYTES` / `UPLOAD_MAX_ARCHIVE_ENTRY_BYTES` / `UPLOAD_MAX_ARCHIVE_ENTRIES` – cap raw upload size, archive expansion, and embedded payload counts to block oversized submissions (defaults: 8 MiB raw, ~20 MiB expanded, 10 MiB per entry, 500 entries).
+- `UPLOAD_MALWARE_SCAN_CMD` / `UPLOAD_MALWARE_SCAN_TIMEOUT` – optional ClamAV (or similar) command and timeout for new uploads.
+- `UPLOAD_ENABLE_MACRO_LINT` / `UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT` – toggle macro and active-content linting for DOCX/PDF uploads.
+- `UPLOAD_PARSER_TIMEOUT` / `UPLOAD_PARSER_CPU_SECONDS` / `UPLOAD_PARSER_MEMORY_MB` – sandboxed document parsing limits (wall clock, CPU seconds, memory MB) applied to pdfminer/docx2txt extraction to terminate hostile or runaway conversions (defaults: 30s / 15 CPU s / 512 MB).
+
 The Container Apps provisioning script (`azure-container-apps/1-setup_app-raiassessment.sh`) auto-creates the Content Safety account (if missing) and assigns the managed identity the `Cognitive Services OpenAI User` and `Cognitive Services User` roles. End users do **not** require these roles; they only need to authenticate through the app registration and appear in `RAI-ASSESSMENT-USERS` (and `RAI-ASSESSMENT-ADMINS` for admin features).
 
 > **Heads-up:** The project `.dockerignore` intentionally excludes `.env` so your secrets never enter the container build context. Use the sync script documented below to publish environment variables to Azure Container Apps instead of copying `.env` into the image.

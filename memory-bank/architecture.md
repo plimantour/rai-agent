@@ -14,7 +14,7 @@
 ## 2. Data Flow (UI Path)
 ```
 User Uploads DOCX
-  → Extract text (docs_utils)
+  → Extract text inside sandboxed worker (`helpers/docs_utils` with `UPLOAD_PARSER_*` caps)
     → Run Content Safety Prompt Shields (helpers/content_safety.py using managed identity)
     → Initialize models (DefaultAzureCredential + Key Vault)
       → (Admin) Select model & reasoning effort
@@ -85,8 +85,9 @@ Adaptive invocation attempts a superset of safe parameters then progressively st
 - Key Vault for secret indirection (no raw secrets in repo)
 - Allow‑list gating admin actions (model selection)
 - Azure Content Safety Prompt Shields block unsafe uploads before generation; custom subdomain required for managed identity.
+- Sandboxed document parsing constrains pdfminer/docx2txt extraction using env-tunable limits (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`).
 - Per-session CSRF tokens enforced across HTMX POST endpoints.
-- TODO: Rate limiting & input size bounds
+- TODO: Rate limiting (size limits & parser caps enforced via env vars)
 
 ## 11. Extensibility Hooks
 | Extension | How |

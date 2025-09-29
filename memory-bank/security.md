@@ -7,7 +7,7 @@
 - **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs. Azure Content Safety Prompt Shields now screen uploads, but additional defense-in-depth (guard prompts, allowlisting) remains outstanding.
 - **Medium – Graph access token validation gap:** `/auth/session` only checks that a token can call Microsoft Graph. It does not verify issuer, audience/client ID, or signature, so tokens minted for other apps with delegated scopes could impersonate users.
 - **Low – Upload pipeline residual risks:** `_write_temp_upload` now streams to disk with size caps, extension/MIME allow lists, decompression-bomb detection, macro/PDF active-content linting, and optional ClamAV scans on newly supplied files; remaining work focuses on sandboxing downstream parsers and monitoring long-running conversions.
-- **Medium – Document parser attack surface:** `pdfminer` and `docx2txt` run on untrusted user uploads; crafted docs could exploit parser vulnerabilities or exhaust resources.
+- **Low – Document parser attack surface:** Text extraction now runs inside a sandboxed worker with CPU, memory, file descriptor, and wall-clock limits; remaining work focuses on further isolating rare parser escapes in future iterations.
 - **Medium – Third-party scripts served from CDN without integrity:** htmx loads from `https://unpkg.com` without Subresource Integrity or self-hosting, allowing script injection if the CDN is compromised.
 - **Medium – Resource exhaustion risk:** Long-running analysis/generation threads have no rate limiting or quotas, allowing an authenticated user to overwhelm worker pools and rack up costs.
 - **Low – Session persistence & log hygiene:** `SESSION_STORE` retains sessions indefinitely and audit logs embed raw user-supplied identifiers, enabling resource creep or log injection tactics.
@@ -24,7 +24,7 @@
 7. Add session expiry/cleanup and normalize/escape identifiers before writing to blob logs and append-only storage.
 8. Burn trusted hashes/signatures for critical prompt files into environment variables at build time and verify them before backend load, rejecting unexpected modifications.
 9. Introduce prompt-input sanitization and content moderation (e.g., filters, guard prompts, policy checks) to mitigate uploaded prompt injection attempts.
-10. Sandboxed or containerized document parsing with strict CPU/time/memory limits to contain PDF/DOCX parser exploits.
+10. Sandboxed or containerized document parsing with strict CPU/time/memory limits to contain PDF/DOCX parser exploits. ✅ Implemented via resource-limited worker process (Sep 2025).
 11. Implement rate limiting, per-user quotas, or job queueing for analysis/generation to prevent resource exhaustion and cost abuse.
 12. Establish automatic retention policies for generated artifacts (short-lived storage, secure deletion) and audit storage locations for sensitive drafts.
 
@@ -41,6 +41,7 @@
 - **CSRF tokens enforced:** Each session now issues a cryptographically random token stored in server memory, injected into forms/meta tags, attached to HTMX headers, and validated on every state-changing POST (including auth, uploads, settings, and admin endpoints).
 - **Prompt shield pre-checks:** `helpers/content_safety.ensure_uploaded_text_safe` runs Azure Content Safety Prompt Shields against every uploaded/analysis document with retries, caching, and managed identity authentication; unsafe content is rejected with user-visible messaging.
 - **Upload pipeline hardening:** `_write_temp_upload` streams uploads to disk with strict size/MIME/extension limits, macro and PDF active-content linting, and only invokes the malware scanner for newly supplied files while stored solution text continues to pass Prompt Shield validation; HTMX forms avoid re-posting file inputs so cached documents are reused without redundant scans.
+- **Sandboxed document parsing:** Text extraction now executes inside a separate process with CPU, memory, and wall-clock constraints (defaults 30s / 15 CPU seconds / 512 MB via `UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`), returning friendly user errors on timeout or parser failures for both HTMX and CLI flows.
 - **Managed identity-only data plane access:** All calls to Azure OpenAI, Content Safety, Key Vault, and Blob Storage use the container app's managed identity; end-user tokens are never forwarded, reducing impersonation risk.
 - **Token signature validation:** `helpers/token_validation.validate_graph_access_token` verifies Graph access tokens offline (signature when available, otherwise strict claim checks for issuer/tenant/client) before the app trusts session identity data; production login confirmed.
 - **Container env management:** `.dockerignore` deliberately excludes `.env`; secrets stay local and are projected into Azure via `azure-container-apps/sync_env_to_containerapp.sh` (supports `--dry-run`, `--exclude`, `--prune`). Operators review planned changes before applying and avoid `--prune` unless the dotenv file is canonical for the environment.
@@ -55,7 +56,7 @@
 | High | Request AuthZ | Cross-site request forgery on HTMX POSTs | ✅ Implemented – per-session tokens validated on every POST |
 | Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | ✅ Implemented – token signature, issuer, tenant, and client checks |
 | Low | File Handling | Upload pipeline hardened (size/MIME caps, macro/PDF linting, ClamAV on new uploads) | ✅ Implemented – residual work is parser sandboxing |
-| Medium | File Parsing | Untrusted PDFs/DOCX parsed without sandboxing | Open – sandbox parsers |
+| Low | File Parsing | Document parsing isolated with CPU/memory/time caps | ✅ Implemented – monitor for future hardening |
 | Medium | Supply Chain | htmx pulled from CDN without SRI | Open – pin or self-host |
 | Medium | Resource Usage | No rate limiting on long-running jobs | Open – add quotas/queues |
 | Low | Session/Logging | Sessions never expire; logs accept raw identifiers | Open – add expiry + log normalization |
