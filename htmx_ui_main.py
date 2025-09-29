@@ -1396,15 +1396,18 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     filename_root = ""
     text: Optional[str] = None
     display_name = ""
-    if file:
+    filename = (file.filename if file else "") or ""
+    has_new_upload = bool(filename.strip())
+    if has_new_upload:
         session.messages.append("Scanning uploaded document for threats. Please wait...")
         filename_root, text = _extract_text_from_upload(file)
-        display_name = file.filename or f"{filename_root}.docx"
+        display_name = filename or f"{filename_root}.docx"
         if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
             response = render_dashboard(request, session, user, partial=True)
             if created:
                 response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
             return response
+        session.messages.append("Scan complete: no threats detected.")
         _set_stored_solution(session, display_name, text)
     else:
         text = session.stored_solution_text
@@ -1509,10 +1512,13 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
     filename_root = ""
     text: Optional[str] = None
     display_name = ""
-    if file:
+    filename = (file.filename if file else "") or ""
+    has_new_upload = bool(filename.strip())
+    if has_new_upload:
         session.messages.append("Scanning uploaded document for threats. Please wait...")
         filename_root, text = _extract_text_from_upload(file)
-        display_name = file.filename or f"{filename_root}.docx"
+        display_name = filename or f"{filename_root}.docx"
+        session.messages.append("Scan complete: no threats detected.")
         _set_stored_solution(session, display_name, text)
     else:
         text = session.stored_solution_text

@@ -11,14 +11,29 @@
 
     <section class="panel">
         <h3>Solution description</h3>
-        <form id="solution-form" class="stack" data-has-upload="{{ 'true' if session.stored_solution_text else 'false' }}">
+        <form id="solution-form" class="stack" data-has-upload="{{ 'true' if session.stored_solution_text else 'false' }}" data-has-stored="{{ 'true' if session.stored_solution_text else 'false' }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="solution_file">Upload or replace the solution description</label>
-            <input type="file" id="solution_file" name="file" accept=".docx,.pdf,.txt,.json"
-                   hx-post="/upload" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+            <div class="file-picker">
+                <input type="file" id="solution_file" name="file" accept=".docx,.pdf,.txt,.json"
+                       class="file-input sr-only"
+                       hx-post="/upload" hx-trigger="change" hx-target="#main-content" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                <label for="solution_file" class="button secondary file-trigger" data-file-trigger role="button" tabindex="0">Choose file</label>
+                <span class="file-placeholder" data-file-placeholder data-default="No file chosen" data-stored="">
+                    {% if session.stored_solution_text %}{% else %}No file chosen{% endif %}
+                </span>
+            </div>
             {% if session.stored_solution_text %}
             <div class="stored-upload" id="stored-solution">
-                <span class="file-name">{{ session.stored_solution_filename or "Stored solution description" }}</span>
+                <div class="file-meta">
+                    <span class="file-name">{{ session.stored_solution_filename or "Stored solution description" }}</span>
+                    <span class="verified-badge" aria-label="Document verified">
+                        <svg class="verified-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                            <path d="M12 2.5a1 1 0 0 1 .71.29l1.65 1.65 2.22-.33a1 1 0 0 1 1.13.77l.5 2.2 2 1.16a1 1 0 0 1 .38 1.36l-1.1 2.1.84 2.12a1 1 0 0 1-.4 1.24l-2 1.2-.2 2.26a1 1 0 0 1-1.13.9l-2.23-.37-1.58 1.53a1 1 0 0 1-1.4 0l-1.59-1.53-2.23.37a1 1 0 0 1-1.13-.9l-.2-2.26-2-1.2a1 1 0 0 1-.4-1.24l.84-2.12-1.1-2.1a1 1 0 0 1 .38-1.36l2-1.16.5-2.2a1 1 0 0 1 1.13-.77l2.22.33 1.65-1.65A1 1 0 0 1 12 2.5zm3.68 7.57-4.78 4.78-2.58-2.58a.75.75 0 0 0-1.06 1.06l3.1 3.1a.75.75 0 0 0 1.06 0l5.31-5.31a.75.75 0 1 0-1.06-1.06z" />
+                        </svg>
+                        <span class="verified-text">Verified</span>
+                    </span>
+                </div>
                 <button type="button" class="icon-button" hx-post="/upload/clear" hx-target="#main-content" hx-swap="outerHTML" aria-label="Clear stored solution description">
                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1h5a1 1 0 1 1 0 2h-1v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5H4a1 1 0 1 1 0-2h5zm9 2H6v15a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V5zm-8 3a1 1 0 0 1 .993.883L11 9v8a1 1 0 0 1-1.993.117L9 17V9a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 .993.883L15 9v8a1 1 0 0 1-1.993.117L13 17V9a1 1 0 0 1 1-1z"/></svg>
                 </button>
@@ -27,13 +42,13 @@
             <p class="muted small">Upload once to reuse the text for analysis and generation.</p>
             {% endif %}
             <div class="button-row">
-                <button type="button" class="button requires-upload"
-                        hx-post="/analysis" hx-target="#main-content" hx-swap="outerHTML"
-                        hx-include="#solution-form" hx-encoding="multipart/form-data"
+        <button type="button" class="button requires-upload"
+            hx-post="/analysis" hx-target="#main-content" hx-swap="outerHTML"
+            hx-include="#solution-form input[type='hidden']"
                         {% if not session.stored_solution_text %}disabled{% endif %}>Analyze</button>
-                <button type="button" class="button primary requires-upload"
-                        hx-post="/generate" hx-target="#main-content" hx-swap="outerHTML"
-                        hx-include="#solution-form" hx-encoding="multipart/form-data"
+        <button type="button" class="button primary requires-upload"
+            hx-post="/generate" hx-target="#main-content" hx-swap="outerHTML"
+            hx-include="#solution-form input[type='hidden']"
                         {% if not session.stored_solution_text %}disabled{% endif %}>Generate</button>
             </div>
         </form>

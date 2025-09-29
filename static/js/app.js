@@ -127,8 +127,45 @@
         }
     }
 
+    function normalizeRequestPath(path) {
+        if (!path) {
+            return null;
+        }
+        if (typeof path !== "string") {
+            return null;
+        }
+        const trimmed = path.trim();
+        if (trimmed.length === 0) {
+            return null;
+        }
+        try {
+            const url = new URL(trimmed, window?.location?.origin || undefined);
+            return url.pathname;
+        } catch (err) {
+            const clean = trimmed.split("?")[0];
+            return clean || null;
+        }
+    }
+
+    function matchesActionPath(path, target) {
+        const normalized = normalizeRequestPath(path);
+        if (!normalized || !target) {
+            return false;
+        }
+        if (normalized === target) {
+            return true;
+        }
+        if (!normalized.startsWith("/") && `/${normalized}` === target) {
+            return true;
+        }
+        if (!target.startsWith("/") && normalized === `/${target}`) {
+            return true;
+        }
+        return false;
+    }
+
     function shouldShowLoading(path) {
-        return path === "/analysis" || path === "/generate" || path === "/upload";
+        return ["/analysis", "/generate", "/upload"].some((candidate) => matchesActionPath(path, candidate));
     }
 
     function extractErrorDetail(xhr) {
@@ -226,12 +263,52 @@
         form.dataset.uploadInit = "true";
 
         const fileInput = form.querySelector('input[type="file"]');
+        const triggerButton = form.querySelector('[data-file-trigger]');
+        const placeholder = form.querySelector('[data-file-placeholder]');
+
+        const updatePlaceholder = () => {
+            if (!placeholder) {
+                return;
+            }
+            const hasFile = !!(fileInput && fileInput.files && fileInput.files.length > 0);
+            const hasStored = form.dataset.hasStored === "true";
+            if (hasFile) {
+                const name = fileInput.files[0]?.name || "";
+                placeholder.textContent = name;
+                placeholder.classList.add("has-value");
+                if (name.trim().length === 0) {
+                    placeholder.classList.add("is-hidden");
+                } else {
+                    placeholder.classList.remove("is-hidden");
+                }
+            } else if (hasStored) {
+                const storedText = placeholder.dataset.stored || "";
+                placeholder.textContent = storedText;
+                placeholder.classList.remove("has-value");
+                if (storedText.trim().length === 0) {
+                    placeholder.classList.add("is-hidden");
+                } else {
+                    placeholder.classList.remove("is-hidden");
+                }
+            } else {
+                const fallback = placeholder.dataset.default || "";
+                placeholder.textContent = fallback;
+                placeholder.classList.remove("has-value");
+                if (fallback.trim().length === 0) {
+                    placeholder.classList.add("is-hidden");
+                } else {
+                    placeholder.classList.remove("is-hidden");
+                }
+            }
+        };
 
         const evaluateState = () => {
-            const hasStored = form.dataset.hasUpload === "true";
             const hasFile = !!(fileInput && fileInput.files && fileInput.files.length > 0);
+            const hasStored = !!form.querySelector("#stored-solution");
+            form.dataset.hasStored = hasStored ? "true" : "false";
             form.dataset.hasUpload = hasStored || hasFile ? "true" : "false";
             setUploadButtonsState(form, hasStored || hasFile);
+            updatePlaceholder();
         };
 
         evaluateState();
@@ -239,6 +316,19 @@
         if (fileInput) {
             fileInput.addEventListener("change", () => {
                 evaluateState();
+            });
+        }
+
+        if (triggerButton && fileInput) {
+            triggerButton.addEventListener("click", (event) => {
+                event.preventDefault();
+                fileInput.click();
+            });
+            triggerButton.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInput.click();
+                }
             });
         }
 
@@ -352,11 +442,11 @@
 
         document.body?.addEventListener("htmx:beforeRequest", (evt) => {
             const path = evt.detail?.requestConfig?.path || evt.detail?.pathInfo?.path;
-            if (path === "/analysis") {
+            if (matchesActionPath(path, "/analysis")) {
                 showToast("Analyzing solution description…");
-            } else if (path === "/generate") {
+            } else if (matchesActionPath(path, "/generate")) {
                 showToast("Generating draft RAI assessment…");
-            } else if (path === "/upload") {
+            } else if (matchesActionPath(path, "/upload")) {
                 showToast("Scanning uploaded document for threats. Please wait...");
             }
             if (shouldShowLoading(path)) {

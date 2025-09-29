@@ -10,10 +10,23 @@ except ImportError:  # Graceful fallback so tests don't skip solely due to missi
             print("[warn] python-dotenv not installed; proceeding without loading .env file")
         except Exception:
             pass
-            return ""
+        return False
+
+"""
+NOTE ON IMPORT STRATEGY
+-----------------------
+Heavy / environment-specific dependencies (Azure identity & Key Vault) are imported lazily
+inside initialize_ai_models() so that simply importing this module for lightweight operations
 (e.g., unit tests that mock network calls) does not require the Azure SDK stack to be present.
 
 If you need Azure functionality, ensure 'azure-identity' and 'azure-keyvault-secrets' are
+installed before calling initialize_ai_models().
+"""
+
+# Docs / docx utilities import (optional for reasoning path). Provide no-op stubs if unavailable.
+try:
+    from helpers.docs_utils import docx_find_replace_text, docx_find_replace_text_bydict, docx_delete_all_between_searched_texts
+except Exception:  # pragma: no cover
     def docx_find_replace_text(*_a, **_k):
         return 0
     def docx_find_replace_text_bydict(*_a, **_k):
@@ -680,21 +693,11 @@ def get_azure_openai_completion_nocache(prompt, system_prompt, model=None, reaso
         return m_resp.choices[0].message.content if (m_resp and m_resp.choices and m_resp.choices[0].message) else ""
     except Exception as exc:
         log.warning("nocache completion failed: %s", exc)
-            print(
-                colored(
-                    f"Failed to process plan B1 and T4.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
-                    "red",
-                )
-            )
+        return ""
 
 
 # ## Method to ask a prompt to LLM (best with GPT-4-32k)
-        print(
-            colored(
-                f"Failed to process stakeholders.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
-                "red",
-            )
-        )
+def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="text", temperature=0.0, language="English", min_sleep=0, max_sleep=0, rebuildCache=False, compress=False, verbose=False, reasoning_effort=None):
 
     if model is None:
         model = completion_model

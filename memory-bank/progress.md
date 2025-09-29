@@ -22,6 +22,7 @@
 - 2025-09-29: Added `.dockerignore` to shrink the Docker build context, created `azure-container-apps/sync_env_to_containerapp.sh` to replicate local `.env` values into the Container App (with dry-run/exclude/prune options), and updated the markdown sanitizer to allow heading tags so HTMX renders analysis sections with proper titles.
 - 2025-09-29 (later): Hardened `/auth/session` with offline token validation (signature and claim checks with safe fallback) and confirmed production login works under the stricter validation path.
 - 2025-09-29 (latest): Implemented phased HTMX upload guardrails: Phase 1/2 introduced extension/MIME allow list, chunked streaming to a locked temp dir, size caps, UTF-8 enforcement, optional `python-magic`, DOCX/PDF/JSON/TXT validators, and safer zip packaging; Phase 3 now adds decompression-bomb detection, macro linting, PDF active-content blocking, and an optional malware scan command. Syntax verified via `python -m compileall htmx_ui_main.py`.
+- 2025-09-29 (latest+1): Restricted malware scanning to genuinely new uploads so stored documents skip redundant ClamAV runs, tightened HTMX form submissions to avoid re-posting file inputs, and kept Azure Content Safety verification in place for both new uploads and stored text reuse.
 
 ## What Works
 

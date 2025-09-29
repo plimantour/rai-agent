@@ -235,11 +235,84 @@ body.theme-dark textarea::placeholder {
     background: #eff2ff;
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.file-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.file-trigger {
+    flex: 0 0 auto;
+}
+
+.file-placeholder {
+    flex: 1 1 200px;
+    min-width: 120px;
+    color: #5f6b85;
+    font-size: 0.85rem;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.file-placeholder.has-value {
+    color: #1f2430;
+}
+
+.file-placeholder.is-hidden {
+    display: none;
+}
+
+.stored-upload .file-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
 .stored-upload .file-name {
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1 1 auto;
+}
+
+.verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(20, 128, 77, 0.12);
+    color: #0f5d38;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.verified-icon {
+    width: 0.9rem;
+    height: 0.9rem;
+    fill: currentColor;
+}
+
+.verified-text {
+    display: inline-block;
 }
 
 .icon-button {
@@ -392,6 +465,19 @@ body.theme-dark .muted {
 body.theme-dark .progress-steps {
     background: rgba(30, 41, 59, 0.85);
     border-color: rgba(148, 163, 184, 0.3);
+}
+
+body.theme-dark .verified-badge {
+    background: rgba(34, 197, 94, 0.16);
+    color: #34d399;
+}
+
+body.theme-dark .file-placeholder {
+    color: #94a3b8;
+}
+
+body.theme-dark .file-placeholder.has-value {
+    color: #f1f5f9;
 }
 
 body.theme-dark .progress-item .step-detail {
