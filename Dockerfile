@@ -13,8 +13,45 @@ RUN apt-get update && \
 		python3-pip \
 		python-dev-is-python3 \
 		build-essential \
-		vim && \
+		vim \
+		clamav \
+		clamav-daemon \
+		ca-certificates \
+		curl && \
 	rm -rf /var/lib/apt/lists/*
+
+# Ensure virus definitions exist (best effort) and provide a wrapper for runtime scans
+RUN freshclam || true
+
+RUN mkdir -p /var/log/clamav /var/run/clamav && \
+	chown -R clamav:clamav /var/log/clamav /var/run/clamav
+
+RUN cat <<'EOF' >/usr/local/bin/clamdscan-wrapper && \
+	chmod +x /usr/local/bin/clamdscan-wrapper
+#!/bin/bash
+set -euo pipefail
+
+TARGET="$1"
+
+# Start clamd if it is not already running
+if ! pgrep -x clamd >/dev/null 2>&1; then
+	freshclam --quiet || true
+	clamd --foreground --config-file=/etc/clamav/clamd.conf &
+	CLAMD_PID=$!
+	for _ in $(seq 1 15); do
+		if [ -S /var/run/clamav/clamd.ctl ]; then
+			break
+		fi
+		sleep 1
+	done
+fi
+
+if clamdscan --config-file=/etc/clamav/clamd.conf --no-summary "$TARGET"; then
+	exit 0
+fi
+
+clamscan --no-summary "$TARGET"
+EOF
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt

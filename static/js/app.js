@@ -131,6 +131,34 @@
         return path === "/analysis" || path === "/generate" || path === "/upload";
     }
 
+    function extractErrorDetail(xhr) {
+        if (!xhr) {
+            return null;
+        }
+        const raw = xhr.responseText;
+        const contentType = xhr.getResponseHeader ? xhr.getResponseHeader("Content-Type") || "" : "";
+        if (contentType.includes("application/json")) {
+            try {
+                const payload = JSON.parse(raw || "{}");
+                if (payload && typeof payload.detail === "string" && payload.detail.trim().length > 0) {
+                    return payload.detail.trim();
+                }
+            } catch (err) {
+                // ignore parse errors and fall back to text trimming
+            }
+        }
+        if (typeof raw === "string" && raw.trim().length > 0) {
+            return raw.trim();
+        }
+        if (xhr.status && xhr.statusText) {
+            return `${xhr.status} ${xhr.statusText}`;
+        }
+        if (xhr.status) {
+            return `Request failed with status ${xhr.status}`;
+        }
+        return null;
+    }
+
     function showLoadingOverlay() {
         if (!loadingOverlay) {
             return;
@@ -328,6 +356,8 @@
                 showToast("Analyzing solution description…");
             } else if (path === "/generate") {
                 showToast("Generating draft RAI assessment…");
+            } else if (path === "/upload") {
+                showToast("Scanning uploaded document for threats. Please wait...");
             }
             if (shouldShowLoading(path)) {
                 showLoadingOverlay();
@@ -338,8 +368,15 @@
             hideLoadingOverlay();
         });
 
-        document.body?.addEventListener("htmx:responseError", () => {
+        document.body?.addEventListener("htmx:responseError", (evt) => {
             hideLoadingOverlay();
+            const xhr = evt.detail?.xhr;
+            const detail = extractErrorDetail(xhr);
+            if (detail) {
+                showToast(`Request failed: ${detail}`);
+            } else {
+                showToast("Request failed. Please retry.");
+            }
         });
 
         document.body?.addEventListener("htmx:sendError", () => {

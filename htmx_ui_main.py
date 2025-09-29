@@ -19,6 +19,8 @@ import json
 import os
 import re
 import secrets
+import shlex
+import subprocess
 import tempfile
 import threading
 import time
@@ -73,6 +75,74 @@ TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 STATIC_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(time.time())))
 
+UPLOAD_ALLOWED_EXTENSIONS = {".docx", ".pdf", ".json", ".txt"}
+UPLOAD_ALLOWED_MIME_TYPES = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/pdf",
+    "application/json",
+    "text/plain",
+}
+UPLOAD_CHUNK_SIZE = 64 * 1024
+try:
+    UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(8 * 1024 * 1024)))
+except ValueError:
+    UPLOAD_MAX_BYTES = 8 * 1024 * 1024
+UPLOAD_TMP_DIR = Path(os.getenv("UPLOAD_TMP_DIR", str(BASE_DIR / "tmp_uploads")))
+UPLOAD_TMP_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    os.chmod(UPLOAD_TMP_DIR, 0o700)
+except PermissionError:
+    pass
+
+try:
+    UPLOAD_MAX_UNZIPPED_BYTES = int(os.getenv("UPLOAD_MAX_UNZIPPED_BYTES", str(20 * 1024 * 1024)))
+except ValueError:
+    UPLOAD_MAX_UNZIPPED_BYTES = 20 * 1024 * 1024
+
+try:
+    UPLOAD_MAX_ARCHIVE_ENTRIES = int(os.getenv("UPLOAD_MAX_ARCHIVE_ENTRIES", "500"))
+except ValueError:
+    UPLOAD_MAX_ARCHIVE_ENTRIES = 500
+
+try:
+    UPLOAD_MAX_ARCHIVE_ENTRY_BYTES = int(os.getenv("UPLOAD_MAX_ARCHIVE_ENTRY_BYTES", str(10 * 1024 * 1024)))
+except ValueError:
+    UPLOAD_MAX_ARCHIVE_ENTRY_BYTES = 10 * 1024 * 1024
+
+UPLOAD_MALWARE_SCAN_CMD = (os.getenv("UPLOAD_MALWARE_SCAN_CMD") or "").strip()
+UPLOAD_MALWARE_SCAN_ARGS = shlex.split(UPLOAD_MALWARE_SCAN_CMD) if UPLOAD_MALWARE_SCAN_CMD else []
+
+try:
+    UPLOAD_MALWARE_SCAN_TIMEOUT = int(os.getenv("UPLOAD_MALWARE_SCAN_TIMEOUT", "30"))
+except ValueError:
+    UPLOAD_MALWARE_SCAN_TIMEOUT = 30
+
+UPLOAD_ENABLE_MACRO_LINT = (os.getenv("UPLOAD_ENABLE_MACRO_LINT", "true").lower() in ("1", "true", "yes", "on"))
+UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT = (os.getenv("UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT", "true").lower() in ("1", "true", "yes", "on"))
+
+try:
+    import magic  # type: ignore
+
+    _MAGIC_MIME = magic.Magic(mime=True)  # type: ignore[arg-type]
+except Exception:  # pragma: no cover - optional dependency
+    _MAGIC_MIME = None
+
+DOCX_MACRO_INDICATORS = {
+    "word/vbaproject.bin",
+    "word/vba/vbaproject.bin",
+    "word/vba/_rels/vbaproject.bin.rels",
+    "word/vbadata.xml",
+}
+
+PDF_ACTIVE_CONTENT_MARKERS = (
+    b"/JS",
+    b"/JavaScript",
+    b"/Launch",
+    b"/AA",
+    b"/OpenAction",
+    b"/EmbeddedFile",
+)
+
 ALLOWED_MARKDOWN_TAGS = [
     "a",
     "blockquote",
@@ -114,6 +184,61 @@ ALLOWED_MARKDOWN_PROTOCOLS = ["http", "https", "mailto"]
 
 def _env_bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(default)).lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
+def _run_malware_scan(temp_path: Path) -> None:
+    """Invoke the configured malware scanner command and raise if it flags the file."""
+    if not UPLOAD_MALWARE_SCAN_ARGS:
+        return
+    cmd = [*UPLOAD_MALWARE_SCAN_ARGS, str(temp_path)]
+    started_at = time.perf_counter()
+    log.info("Malware scan started for %s", temp_path)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=UPLOAD_MALWARE_SCAN_TIMEOUT)
+    except FileNotFoundError as exc:
+        log.error("Malware scan command not found: %s", exc)
+        raise HTTPException(status_code=500, detail="Malware scanner unavailable") from exc
+    except subprocess.TimeoutExpired as exc:
+        log.error("Malware scan timed out for %s", temp_path)
+        raise HTTPException(status_code=503, detail="Malware scanner timed out") from exc
+    if result.returncode != 0:
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        log.warning("Malware scanner rejected %s (stdout=%s stderr=%s)", temp_path, stdout, stderr)
+        raise HTTPException(status_code=400, detail="Upload rejected by malware scanner")
+    duration = time.perf_counter() - started_at
+    stdout = (result.stdout or "").strip()
+    log.info("Malware scan cleared %s in %.2fs%s",
+             temp_path,
+             duration,
+             f" (details: {stdout})" if stdout else "")
+
+
+def _enforce_zip_limits(archive: zipfile.ZipFile, label: str) -> None:
+    """Ensure zipped content cannot expand beyond configured thresholds."""
+    entries = archive.infolist()
+    if len(entries) > UPLOAD_MAX_ARCHIVE_ENTRIES:
+        log.warning("%s contains %s entries (limit %s)", label, len(entries), UPLOAD_MAX_ARCHIVE_ENTRIES)
+        raise HTTPException(status_code=400, detail=f"Uploaded {label} contains too many embedded files")
+    total = 0
+    for info in entries:
+        total += info.file_size
+        if info.file_size > UPLOAD_MAX_ARCHIVE_ENTRY_BYTES:
+            log.warning("%s entry %s exceeds max entry size (%s bytes)", label, info.filename, UPLOAD_MAX_ARCHIVE_ENTRY_BYTES)
+            raise HTTPException(status_code=400, detail=f"Uploaded {label} contains an oversized embedded file")
+        if total > UPLOAD_MAX_UNZIPPED_BYTES:
+            log.warning("%s expands past allowed limit (>%s bytes)", label, UPLOAD_MAX_UNZIPPED_BYTES)
+            raise HTTPException(status_code=400, detail=f"Uploaded {label} expands beyond allowed size")
 
 
 def _default_show_reasoning_summary() -> Optional[bool]:
@@ -1061,16 +1186,145 @@ async def update_theme(request: Request):
 
 
 def _write_temp_upload(upload: UploadFile) -> Path:
-    upload.file.seek(0)
-    data = upload.file.read()
-    if not data:
+    filename = upload.filename or "upload"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in UPLOAD_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix or 'unknown'}")
+
+    try:
+        upload.file.seek(0)
+    except (AttributeError, OSError):
+        pass
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, dir=str(UPLOAD_TMP_DIR), suffix=suffix)
+    bytes_written = 0
+    try:
+        while True:
+            chunk = upload.file.read(UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            bytes_written += len(chunk)
+            if bytes_written > UPLOAD_MAX_BYTES:
+                raise HTTPException(status_code=400, detail=f"File exceeds max size of {UPLOAD_MAX_BYTES // (1024 * 1024)}MB")
+            tmp.write(chunk)
+        tmp.flush()
+    except HTTPException:
+        tmp.close()
+        remove_file_safe(tmp.name)
+        raise
+    except Exception as exc:
+        tmp.close()
+        remove_file_safe(tmp.name)
+        log.exception("Failed to store uploaded file")
+        raise HTTPException(status_code=400, detail="Failed to store uploaded file") from exc
+    finally:
+        try:
+            tmp.close()
+        except Exception:
+            pass
+
+    if bytes_written == 0:
+        remove_file_safe(tmp.name)
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
-    suffix = Path(upload.filename or "upload").suffix or ""
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp.write(data)
-    tmp.flush()
-    tmp.close()
-    return Path(tmp.name)
+
+    temp_path = Path(tmp.name)
+    try:
+        detected_mime = _validate_uploaded_file(temp_path, suffix)
+        _run_malware_scan(temp_path)
+    except HTTPException:
+        remove_file_safe(tmp.name)
+        raise
+    except Exception as exc:
+        remove_file_safe(tmp.name)
+        log.exception("Uploaded file validation failed")
+        raise HTTPException(status_code=400, detail="Uploaded file failed validation") from exc
+
+    if detected_mime not in UPLOAD_ALLOWED_MIME_TYPES:
+        remove_file_safe(tmp.name)
+        raise HTTPException(status_code=400, detail=f"Unsupported MIME type: {detected_mime or 'unknown'}")
+
+    return temp_path
+
+
+def _validate_uploaded_file(temp_path: Path, suffix: str) -> str:
+    suffix = suffix.lower()
+    if suffix == ".docx":
+        if _MAGIC_MIME is not None:
+            try:
+                detected = _MAGIC_MIME.from_file(str(temp_path))  # type: ignore[call-arg]
+            except Exception as exc:  # pragma: no cover - optional dependency noise
+                log.debug("python-magic failed to classify DOCX: %s", exc)
+            else:
+                if detected == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    return detected
+        try:
+            with zipfile.ZipFile(str(temp_path)) as archive:
+                names = archive.namelist()
+                if "word/document.xml" not in names:
+                    raise HTTPException(status_code=400, detail="Uploaded DOCX is missing expected content")
+                _enforce_zip_limits(archive, "DOCX package")
+                if UPLOAD_ENABLE_MACRO_LINT:
+                    lowered = {name.lower() for name in names}
+                    for macro_path in DOCX_MACRO_INDICATORS:
+                        indicator = macro_path.lower()
+                        if indicator in lowered:
+                            log.warning("DOCX macro indicator detected: %s", indicator)
+                            raise HTTPException(status_code=400, detail="Uploaded DOCX contains VBA macros, which are not allowed")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Uploaded DOCX appears invalid or corrupted") from exc
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    if suffix == ".pdf":
+        if _MAGIC_MIME is not None:
+            try:
+                detected = _MAGIC_MIME.from_file(str(temp_path))  # type: ignore[call-arg]
+            except Exception as exc:  # pragma: no cover
+                log.debug("python-magic failed to classify PDF: %s", exc)
+            else:
+                if detected == "application/pdf":
+                    return detected
+        try:
+            with temp_path.open("rb") as fh:
+                header = fh.read(5)
+                if not header.startswith(b"%PDF"):
+                    raise HTTPException(status_code=400, detail="Uploaded PDF is missing the %PDF signature")
+                if UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT:
+                    sniff = header + fh.read(16384)
+                    for marker in PDF_ACTIVE_CONTENT_MARKERS:
+                        if marker in sniff:
+                            log.warning("PDF active content marker detected: %s", marker)
+                            raise HTTPException(status_code=400, detail="Uploaded PDF contains active content markers and was rejected")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Uploaded PDF could not be inspected") from exc
+        return "application/pdf"
+
+    if suffix == ".json":
+        try:
+            with temp_path.open("r", encoding="utf-8") as fh:
+                json.load(fh)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Uploaded JSON is not valid JSON") from exc
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Uploaded JSON must be UTF-8 encoded") from exc
+        return "application/json"
+
+    if suffix == ".txt":
+        try:
+            with temp_path.open("r", encoding="utf-8") as fh:
+                sample = fh.read(4096)
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Plain text files must be UTF-8 encoded") from exc
+        if "\x00" in sample:
+            raise HTTPException(status_code=400, detail="Plain text file appears to contain binary data")
+        return "text/plain"
+
+    raise HTTPException(status_code=400, detail="Unsupported file type")
 
 
 def _extract_text_from_upload(upload: UploadFile) -> Tuple[str, str]:
@@ -1096,6 +1350,7 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
         if created:
             response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
         return response
+    session.messages.append("Scanning uploaded document for threats. Please wait...")
     filename_root, text = _extract_text_from_upload(file)
     display_name = file.filename or f"{filename_root}.docx"
     if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
@@ -1142,6 +1397,7 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     text: Optional[str] = None
     display_name = ""
     if file:
+        session.messages.append("Scanning uploaded document for threats. Please wait...")
         filename_root, text = _extract_text_from_upload(file)
         display_name = file.filename or f"{filename_root}.docx"
         if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
@@ -1254,6 +1510,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
     text: Optional[str] = None
     display_name = ""
     if file:
+        session.messages.append("Scanning uploaded document for threats. Please wait...")
         filename_root, text = _extract_text_from_upload(file)
         display_name = file.filename or f"{filename_root}.docx"
         _set_stored_solution(session, display_name, text)
@@ -1299,6 +1556,11 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
 
     internal_path = output_dir / f"{filename_root}_draftRAI_MsInternal_{identifier}.docx"
     public_path = output_dir / f"{filename_root}_draftRAI_{identifier}.docx"
+    zip_path = output_dir / f"{filename_root}_draftRAI_bundle_{identifier}.zip"
+
+    remove_file_safe(str(internal_path))
+    remove_file_safe(str(public_path))
+    remove_file_safe(str(zip_path))
 
     internal_path.write_bytes(rai_master_internal.read_bytes())
     public_path.write_bytes(rai_master_public.read_bytes())
@@ -1312,6 +1574,8 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         append_log_to_blob(f"{session.user_info or user.display_name} : Generate draft RAI assessment - {display_name}")
     except Exception:
         pass
+
+    reasoning_summary: Optional[str] = None
 
     try:
         await run_in_threadpool(
@@ -1335,28 +1599,24 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         log.exception("Generation failed")
         remove_file_safe(str(internal_path))
         remove_file_safe(str(public_path))
-        error_message = "Draft generation failed. Check logs for details and try again."
-        session.messages.append(error_message)
-        response = render_dashboard(request, session, user, partial=True)
-        if created:
-            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
-        return response
+        remove_file_safe(str(zip_path))
+        raise HTTPException(status_code=500, detail="Failed to generate draft RAI assessment") from exc
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.write(internal_path, arcname=internal_path.name)
-        archive.write(public_path, arcname=public_path.name)
-    zip_buffer.seek(0)
-    zip_path = output_dir / f"{filename_root}_draftRAI_{identifier}.zip"
-    zip_path.write_bytes(zip_buffer.read())
-
-    reasoning_summary = None
     if session.show_reasoning_summary and is_reasoning_model(session.selected_model):
-        summary = get_last_reasoning_summary()
-        if summary:
-            reasoning_summary = summary
-        elif last_reasoning_summary_status() == "empty":
+        reasoning_summary = get_last_reasoning_summary() or None
+        if not reasoning_summary and last_reasoning_summary_status() == "empty":
             reasoning_summary = "Reasoning summary not returned for this request."
+
+    try:
+        with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.write(internal_path, arcname=internal_path.name)
+            archive.write(public_path, arcname=public_path.name)
+    except Exception as exc:
+        remove_file_safe(str(internal_path))
+        remove_file_safe(str(public_path))
+        remove_file_safe(str(zip_path))
+        log.exception("Failed to bundle generated documents")
+        raise HTTPException(status_code=500, detail="Failed to package generated drafts") from exc
     formatted_steps = format_progress_messages(progress.messages)
     cost = extract_cost_from_messages(progress.messages)
     message = "Draft RAI Assessment generated successfully."

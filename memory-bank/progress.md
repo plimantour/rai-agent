@@ -21,6 +21,7 @@
 - 2025-09-28 (latest): Validated managed-identity access against the custom Content Safety subdomain, updated `helpers/content_safety.py` to send `userPrompt` + `documents` as plain strings per the REST contract, refreshed the cache key to prevent stale verdict reuse, and confirmed `.env` / `.env.template` configurations align with the working curl sample for future debugging.
 - 2025-09-29: Added `.dockerignore` to shrink the Docker build context, created `azure-container-apps/sync_env_to_containerapp.sh` to replicate local `.env` values into the Container App (with dry-run/exclude/prune options), and updated the markdown sanitizer to allow heading tags so HTMX renders analysis sections with proper titles.
 - 2025-09-29 (later): Hardened `/auth/session` with offline token validation (signature and claim checks with safe fallback) and confirmed production login works under the stricter validation path.
+- 2025-09-29 (latest): Implemented phased HTMX upload guardrails: Phase 1/2 introduced extension/MIME allow list, chunked streaming to a locked temp dir, size caps, UTF-8 enforcement, optional `python-magic`, DOCX/PDF/JSON/TXT validators, and safer zip packaging; Phase 3 now adds decompression-bomb detection, macro linting, PDF active-content blocking, and an optional malware scan command. Syntax verified via `python -m compileall htmx_ui_main.py`.
 
 ## What Works
 
@@ -44,7 +45,7 @@
 - Retry / timeout / backoff policies for LLM calls
 - Cache invalidation strategy (currently manual deletion only)
 - Horizontal scaling readiness (shared cache + idempotent steps)
-- Input size limits & validation (prevent runaway tokenization)
+- Quarantine workflow for flagged uploads (durable storage + admin review) and automated reporting
 - Multi-language output parameterization
 - Role-based admin / audit (admin list now secret driven but lacks fine-grained roles/audit trail)
 - Formal automated CSRF regression tests (manual validation only so far)

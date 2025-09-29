@@ -127,3 +127,25 @@ def set_log_level(level_name: str) -> bool:
 
 def get_current_log_level() -> str:
     return _CURRENT_LEVEL_NAME or logging.getLevelName(logging.getLogger().level)
+
+
+def preview_sensitive_text(value: Optional[str], head: int = 120, tail: int = 80) -> str:
+    """Return a shortened preview of potentially sensitive text for logging.
+
+    Keeps the first ``head`` characters and the last ``tail`` characters, separated by ``...``
+    when the value exceeds the combined window. Newlines are preserved, but the majority of
+    the content is omitted to reduce the risk of leaking sensitive data verbatim.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if head < 0:
+        head = 0
+    if tail < 0:
+        tail = 0
+    cutoff = head + tail
+    if cutoff == 0 or len(text) <= cutoff + 3:
+        return text
+    prefix = text[:head]
+    suffix = text[-tail:] if tail else ""
+    return f"{prefix}...{suffix}"

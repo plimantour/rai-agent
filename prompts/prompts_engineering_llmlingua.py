@@ -10,23 +10,10 @@ except ImportError:  # Graceful fallback so tests don't skip solely due to missi
             print("[warn] python-dotenv not installed; proceeding without loading .env file")
         except Exception:
             pass
-        return False
-
-"""
-NOTE ON IMPORT STRATEGY
------------------------
-Heavy / environment-specific dependencies (Azure identity & Key Vault) are imported lazily
-inside initialize_ai_models() so that simply importing this module for lightweight operations
+            return ""
 (e.g., unit tests that mock network calls) does not require the Azure SDK stack to be present.
 
 If you need Azure functionality, ensure 'azure-identity' and 'azure-keyvault-secrets' are
-installed before calling initialize_ai_models().
-"""
-
-# Docs / docx utilities import (optional for reasoning path). Provide no-op stubs if unavailable.
-try:
-    from helpers.docs_utils import docx_find_replace_text, docx_find_replace_text_bydict, docx_delete_all_between_searched_texts
-except Exception:  # pragma: no cover
     def docx_find_replace_text(*_a, **_k):
         return 0
     def docx_find_replace_text_bydict(*_a, **_k):
@@ -80,7 +67,7 @@ import ast
 from pprint import pprint
 from helpers.cache_completions import save_completion_to_cache, load_answer_from_completion_cache, delete_cache_entry
 from helpers.completion_pricing import get_completion_pricing_from_usage, is_reasoning_model
-from helpers.logging_setup import get_logger
+from helpers.logging_setup import get_logger, preview_sensitive_text
 from termcolor import colored
 
 from prompts.rai_prompts_llmlingua import SYSTEM_PROMPT, TARGET_LANGUAGE_PLACEHOLDER, SOLUTION_DESCRIPTION_PLACEHOLDER, SOLUTION_DESCRIPTION_SECURITY_ANALYSIS_PROMPT
@@ -327,9 +314,9 @@ def segment_llmlingua_prompt(context, global_rate=0.33):
 def process_llmlingua_prompt(prompt, global_rate=0.33, rebuildCache=False, verbose=False):
     new_context, context_segs, context_segs_rate, context_segs_compress = segment_llmlingua_prompt([prompt])
     if verbose:
-        print(colored(f"new_context: {new_context}", "green"))
+        print(colored(f"new_context (preview): {_preview_value(new_context)}", "green"))
         print('='*80)
-        print(colored(f"context_segs: {context_segs}", "green"))
+        print(colored(f"context_segs (preview): {_preview_value(context_segs)}", "green"))
         print('='*80)
         print(colored(f"context_segs_rate: {context_segs_rate}", "green"))
         print('='*80)
@@ -353,7 +340,11 @@ def process_llmlingua_prompt(prompt, global_rate=0.33, rebuildCache=False, verbo
                 drop_consecutive=True
             )
             if verbose:
-                print(colored(f"Compressed Prompt: {compressed_seg['compressed_prompt']}\n{compressed_seg['compressed_tokens']} tokens Vs {compressed_seg['origin_tokens']} tokens", "blue"))
+                compressed_preview = _preview_value(compressed_seg.get('compressed_prompt', ''))
+                print(colored(
+                    f"Compressed Prompt preview: {compressed_preview}\n{compressed_seg['compressed_tokens']} tokens Vs {compressed_seg['origin_tokens']} tokens",
+                    "blue",
+                ))
             compressed_prompt['compressed_prompt'] += compressed_seg["compressed_prompt"]
             compressed_prompt['compressed_tokens'] += compressed_seg["compressed_tokens"]
             compressed_prompt['origin_tokens'] += compressed_seg["origin_tokens"]
@@ -507,6 +498,19 @@ def extract_string_content(content):
     if value:
         return value.group(1), value.start(), value.end()
     return None, -1, -1
+
+
+def _preview_value(value, head: int = 120, tail: int = 80):
+    """Recursively sanitize potentially sensitive structures for logging/diagnostics."""
+    if isinstance(value, str):
+        return preview_sensitive_text(value, head=head, tail=tail)
+    if isinstance(value, list):
+        return [_preview_value(item, head=head, tail=tail) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_preview_value(item, head=head, tail=tail) for item in value)
+    if isinstance(value, dict):
+        return {key: _preview_value(val, head=head, tail=tail) for key, val in value.items()}
+    return value
 
 
 # ## Method to ask a prompt to LLM (best with GPT-4)
@@ -676,11 +680,21 @@ def get_azure_openai_completion_nocache(prompt, system_prompt, model=None, reaso
         return m_resp.choices[0].message.content if (m_resp and m_resp.choices and m_resp.choices[0].message) else ""
     except Exception as exc:
         log.warning("nocache completion failed: %s", exc)
-        return ""
+            print(
+                colored(
+                    f"Failed to process plan B1 and T4.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                    "red",
+                )
+            )
 
 
 # ## Method to ask a prompt to LLM (best with GPT-4-32k)
-def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="text", temperature=0.0, language="English", min_sleep=0, max_sleep=0, rebuildCache=False, compress=False, verbose=False, reasoning_effort=None):
+        print(
+            colored(
+                f"Failed to process stakeholders.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
 
     if model is None:
         model = completion_model
@@ -1075,13 +1089,13 @@ def get_json_from_answer(answer, main_json= '', verbose=False):
     try:
         answer = answer.strip()
         if verbose:
-            print('ANSWER:\n', answer)
+            print('ANSWER preview:\n', _preview_value(answer))
         if answer[0] == '[':    # If the answer is a list, convert it to a dictionary of lists
             answer_json = {
                 main_json: ast.literal_eval(answer) # Get a list from the string
             }
             if verbose:
-                print(f'\n===>\n {answer_json}')
+                print(f"\n===>\n {_preview_value(answer_json)}")
         else:
             json_answer = _get_only_json_from_answer(answer) # We expect only a JSON structure as the answer - remove any text before or after it
             # Convert text to JSON
@@ -1100,24 +1114,29 @@ def get_json_from_answer(answer, main_json= '', verbose=False):
                             print(colored(f'Replacing {oldKeyName} with {main_json} ({answer_json.keys()})', 'yellow'))
                             answer_json[main_json] = answer_json.pop(oldKeyName)  # Rename key to main_json
                         if verbose:
-                            print(f'\n===>\n {answer_json}')
+                            print(f"\n===>\n {_preview_value(answer_json)}")
                 except Exception as e:
                     print(e)
-                    print(colored(f"Failed to convert the JSON to the expected dictionary.\n{answer}", "red"))
+                    print(colored(f"Failed to convert the JSON to the expected dictionary.\n{_preview_value(answer)}", "red"))
                     return {}
             except Exception as e:
                 print(e)
-                print(colored(f"Failed to convert the JSON to a dictionary.\n{answer}\n------\n{json_answer}", "red"))
+                print(colored(
+                    f"Failed to convert the JSON to a dictionary.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                    "red",
+                ))
                 return {}
         if verbose:
             print('='*80)
-            print(answer_json)
+            print(_preview_value(answer_json))
             print('='*80)
         return answer_json
 
     except Exception as e:
         print(e)
-        print(colored(f"Failed to convert the JSON answer.\n{answer}\n------\n{json_answer}", "red"))
+        safe_answer = _preview_value(answer) if 'answer' in locals() else ''
+        safe_json = _preview_value(locals().get('json_answer', ''))
+        print(colored(f"Failed to convert the JSON answer.\n{safe_answer}\n------\n{safe_json}", "red"))
         return {}
 
 # Method to extract the JSON information from the answer if the LLM outputs text before or after the json structure
@@ -1151,7 +1170,12 @@ def process_solution_risks_assessment(answer, verbose=False):
 
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process risks of bias or prompt injections.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process risks of bias or prompt injections.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return [], [], ""
 
 # Method to process the intended uses section
@@ -1188,7 +1212,12 @@ def process_intended_uses(answer, doc, rai_filepath, rai_public_filepath, nbinte
         return json_answer, intended_use_list, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process intended uses.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process intended uses.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], [], []
 
 # Method to process the fitness for purpose section
@@ -1213,7 +1242,12 @@ def process_fitness_for_purpose(answer, doc, rai_filepath, rai_public_filepath, 
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process fitness for purpose.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process fitness for purpose.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the stakeholders section
@@ -1263,7 +1297,12 @@ def process_stakeholders(answer, doc, rai_filepath, rai_public_filepath, nbinten
         return json_answer, intendeduses_stakeholders, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process stakeholders.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process stakeholders.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, {}, [], []
 
 # Method to process the goals A5 and T3 section
@@ -1321,7 +1360,12 @@ def process_goals_a5_t3(answer, doc, rai_filepath, rai_public_filepath, nbintend
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process goals A5, T1, T2 and T3.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process goals A5, T1, T2 and T3.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the fairness goals F1, F2, F3 section
@@ -1381,7 +1425,12 @@ def process_fairness_goals(answer, doc, rai_filepath, rai_public_filepath, nbint
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process fairness goals F1, F2 and F3.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process fairness goals F1, F2 and F3.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the solution scope section
@@ -1417,7 +1466,12 @@ def process_solution_scope(answer, doc, rai_filepath, rai_public_filepath, nbint
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process solution scope.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process solution scope.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the solution information section
@@ -1492,7 +1546,12 @@ def process_solution_assessment(answer, doc, rai_filepath, rai_public_filepath, 
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process assessment.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process assessment.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the risk of use section
@@ -1529,7 +1588,12 @@ def process_risk_of_use(answer, doc, rai_filepath, rai_public_filepath, nbintend
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process risk of use.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process risk of use.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to get how to mitigate the identified harm
@@ -1634,7 +1698,12 @@ def process_harms_assessment(answer, doc, rai_filepath, rai_public_filepath, nbi
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process harms assessment.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process harms assessment.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # Method to process the impact on stakeholders section
@@ -1668,7 +1737,12 @@ def process_impact_on_stakeholders(answer, doc, rai_filepath, rai_public_filepat
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process impact on stakeholders.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process impact on stakeholders.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 
@@ -1687,7 +1761,12 @@ def process_disclosure_of_ai_interaction(answer, doc, rai_filepath, rai_public_f
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process disclosure of AI interaction.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process disclosure of AI interaction.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 # {'solution_information': {'solution_name': 'AI-Powered Job Matching Platform', 'supplementary_informations': [{'name': 'Solution Demo', 'link': 'https://www.example.com/solution_demo'}, {'name': 'Solution Architecture Diagram', 'link': 'https://www.example.com/solution_architecture'}], 'existing_features': ['Voice-to-text transcription for candidate profile and job offer capture', 'AI-powered structuring of candidate profiles and job offers using Azure OpenAI GPT-4', 'Candidate and job offeror review and modification of AI-structured data', "Job matching using existing client's non-AI matching engine"], 'upcoming_features': ['Integration with additional languages', 'AI-powered job matching engine'], 'solution_relations': "The solution uses Azure OpenAI GPT-4 for AI-powered structuring of data and integrates with an existing client's non-AI matching engine for job matching."}}
@@ -1749,7 +1828,12 @@ def process_solution_information(answer, doc, rai_filepath, rai_public_filepath,
         return json_answer, search_for, replace_by
     except Exception as e:
         print(e)
-        print(colored(f"Failed to process solution information.\n{answer}\n------\n{json_answer}", "red"))
+        print(
+            colored(
+                f"Failed to process solution information.\n{_preview_value(answer)}\n------\n{_preview_value(json_answer)}",
+                "red",
+            )
+        )
         return {}, [], []
 
 
