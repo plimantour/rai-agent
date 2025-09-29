@@ -42,6 +42,7 @@
 - **Prompt shield pre-checks:** `helpers/content_safety.ensure_uploaded_text_safe` runs Azure Content Safety Prompt Shields against every uploaded/analysis document with retries, caching, and managed identity authentication; unsafe content is rejected with user-visible messaging.
 - **Upload pipeline hardening:** `_write_temp_upload` streams uploads to disk with strict size/MIME/extension limits, macro and PDF active-content linting, and only invokes the malware scanner for newly supplied files while stored solution text continues to pass Prompt Shield validation; HTMX forms avoid re-posting file inputs so cached documents are reused without redundant scans.
 - **Sandboxed document parsing:** Text extraction now executes inside a separate process with CPU, memory, and wall-clock constraints (defaults 30s / 15 CPU seconds / 512 MB via `UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`), returning friendly user errors on timeout or parser failures for both HTMX and CLI flows.
+- **Malware scanner warm-up:** The ClamAV wrapper primes the daemon during FastAPI startup with a dummy scan (240 s max) so first uploads are scanned immediately and no longer hit cold-start timeouts.
 - **Managed identity-only data plane access:** All calls to Azure OpenAI, Content Safety, Key Vault, and Blob Storage use the container app's managed identity; end-user tokens are never forwarded, reducing impersonation risk.
 - **Token signature validation:** `helpers/token_validation.validate_graph_access_token` verifies Graph access tokens offline (signature when available, otherwise strict claim checks for issuer/tenant/client) before the app trusts session identity data; production login confirmed.
 - **Container env management:** `.dockerignore` deliberately excludes `.env`; secrets stay local and are projected into Azure via `azure-container-apps/sync_env_to_containerapp.sh` (supports `--dry-run`, `--exclude`, `--prune`). Operators review planned changes before applying and avoid `--prune` unless the dotenv file is canonical for the environment.
@@ -54,6 +55,7 @@
 | High | Notifications | Toasts rendered with `innerHTML` | ✅ Implemented – escaped backend payloads + text-only rendering |
 | High | Prompt Safety | Prompt injection via uploaded content | Open – add guard prompts/moderation |
 | High | Request AuthZ | Cross-site request forgery on HTMX POSTs | ✅ Implemented – per-session tokens validated on every POST |
+| High | Malware Scanning | ClamAV cold start delayed first scan / caused timeouts | ✅ Implemented – startup warm-up primes daemon with dummy scan |
 | Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | ✅ Implemented – token signature, issuer, tenant, and client checks |
 | Low | File Handling | Upload pipeline hardened (size/MIME caps, macro/PDF linting, ClamAV on new uploads) | ✅ Implemented – residual work is parser sandboxing |
 | Low | File Parsing | Document parsing isolated with CPU/memory/time caps | ✅ Implemented – monitor for future hardening |

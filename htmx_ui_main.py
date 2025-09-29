@@ -117,6 +117,9 @@ try:
 except ValueError:
     UPLOAD_MALWARE_SCAN_TIMEOUT = 30
 
+_MALWARE_WARMUP_LOCK = threading.Lock()
+_MALWARE_WARMED_UP = False
+
 UPLOAD_ENABLE_MACRO_LINT = (os.getenv("UPLOAD_ENABLE_MACRO_LINT", "true").lower() in ("1", "true", "yes", "on"))
 UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT = (os.getenv("UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT", "true").lower() in ("1", "true", "yes", "on"))
 
@@ -222,6 +225,63 @@ def _run_malware_scan(temp_path: Path) -> None:
              temp_path,
              duration,
              f" (details: {stdout})" if stdout else "")
+
+
+def _warm_up_malware_scanner() -> None:
+    """Prime the malware scanner so user-triggered scans avoid cold-start timeouts."""
+    global _MALWARE_WARMED_UP
+    if _MALWARE_WARMED_UP or not UPLOAD_MALWARE_SCAN_ARGS:
+        return
+    with _MALWARE_WARMUP_LOCK:
+        if _MALWARE_WARMED_UP:
+            return
+        warmup_timeout = max(UPLOAD_MALWARE_SCAN_TIMEOUT, 240)
+        temp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile("wb", delete=False) as tmp:
+                tmp.write(b"warmup")
+                tmp.flush()
+                temp_path = Path(tmp.name)
+            log.info("Priming malware scanner with warm-up run (timeout=%ss)", warmup_timeout)
+            try:
+                result = subprocess.run(
+                    [*UPLOAD_MALWARE_SCAN_ARGS, str(temp_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=warmup_timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                log.warning(
+                    "Malware scanner warm-up exceeded %ss; real scans may still time out until it finishes",
+                    warmup_timeout,
+                )
+                return
+            if result.returncode != 0:
+                log.warning(
+                    "Malware scanner warm-up returned code %s (stdout=%s stderr=%s)",
+                    result.returncode,
+                    (result.stdout or "").strip(),
+                    (result.stderr or "").strip(),
+                )
+                return
+            _MALWARE_WARMED_UP = True
+            log.info("Malware scanner warm-up completed")
+        except Exception:
+            log.exception("Malware scanner warm-up failed")
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    log.debug("Failed to remove warm-up temp file %s", temp_path)
+
+
+@app.on_event("startup")
+async def _on_app_startup() -> None:
+    """Kick off malware scanner warm-up without blocking app readiness."""
+    if UPLOAD_MALWARE_SCAN_ARGS:
+        threading.Thread(target=_warm_up_malware_scanner, name="malware-warmup", daemon=True).start()
 
 
 def _enforce_zip_limits(archive: zipfile.ZipFile, label: str) -> None:
@@ -510,6 +570,14 @@ def pop_messages(session: SessionState, extra: Optional[List[str]] = None) -> Li
     if extra:
         messages.extend(extra)
     return messages
+
+
+def replace_last_message(session: SessionState, message: str) -> None:
+    """Replace the most recent session toast message, or append if none exist."""
+    if session.messages:
+        session.messages[-1] = message
+    else:
+        session.messages.append(message)
 
 
 def model_options_for_template(selected: str) -> List[dict]:
@@ -1356,10 +1424,12 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
     filename_root, text = _extract_text_from_upload(file)
     display_name = file.filename or f"{filename_root}.docx"
     if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+        replace_last_message(session, "Scan blocked: Azure Content Safety rejected the document.")
         response = render_dashboard(request, session, user, partial=True)
         if created:
             response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
         return response
+    replace_last_message(session, "Scan complete: no threats detected.")
     _set_stored_solution(session, display_name, text)
     session.messages.append(f"Stored '{display_name}' for reuse.")
     try:
@@ -1405,11 +1475,12 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
         filename_root, text = _extract_text_from_upload(file)
         display_name = filename or f"{filename_root}.docx"
         if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+            replace_last_message(session, "Scan blocked: Azure Content Safety rejected the document.")
             response = render_dashboard(request, session, user, partial=True)
             if created:
                 response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
             return response
-        session.messages.append("Scan complete: no threats detected.")
+        replace_last_message(session, "Scan complete: no threats detected.")
         _set_stored_solution(session, display_name, text)
     else:
         text = session.stored_solution_text
@@ -1520,7 +1591,7 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
         session.messages.append("Scanning uploaded document for threats. Please wait...")
         filename_root, text = _extract_text_from_upload(file)
         display_name = filename or f"{filename_root}.docx"
-        session.messages.append("Scan complete: no threats detected.")
+        replace_last_message(session, "Scan complete: no threats detected.")
         _set_stored_solution(session, display_name, text)
     else:
         text = session.stored_solution_text
