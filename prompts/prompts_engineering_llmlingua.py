@@ -78,7 +78,12 @@ import json
 import re
 import ast
 from pprint import pprint
-from helpers.cache_completions import save_completion_to_cache, load_answer_from_completion_cache, delete_cache_entry
+from helpers.cache_completions import (
+    save_completion_to_cache,
+    load_answer_from_completion_cache,
+    delete_cache_entry,
+    make_completion_cache_key,
+)
 from helpers.completion_pricing import get_completion_pricing_from_usage, is_reasoning_model
 from helpers.logging_setup import get_logger, preview_sensitive_text
 from termcolor import colored
@@ -716,7 +721,15 @@ def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="te
         system_prompt = system_prompt.replace('<llmlingua, compress=False>', '').replace('<llmlingua, rate=0.5>', '').replace('<llmlingua, rate=0.8>', '').replace('</llmlingua>', '')
         prompt = prompt.replace('<llmlingua, compress=False>', '').replace('<llmlingua, rate=0.5>', '').replace('<llmlingua, rate=0.8>', '').replace('</llmlingua>', '')
 
-    cached_data, cached_key = load_answer_from_completion_cache(model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), verbose=verbose)
+    cache_seed = make_completion_cache_key(
+        model,
+        language,
+        prompt,
+        temperature,
+        compress,
+        reasoning_effort if is_reasoning_model(model) else None,
+    )
+    cached_data, cached_key = load_answer_from_completion_cache(cache_seed, verbose=verbose)
     cached_model, cached_language, cached_input_cost, cached_output_cost, cached_response = cached_data[0:5] if cached_data else [None, None, None, None, None]
     # generate a random seconds between min_sleep and max_sleep seconds
     sleep_time = random.randint(min_sleep, max_sleep)
@@ -1061,14 +1074,30 @@ def get_azure_openai_completion(prompt, system_prompt, model=None, json_mode="te
         pass
     cached_key_list = []
     if answer and answer.strip():
-        if model_called_first:  # Save the completion to the cache with the model called first if it was changed to use gpt-4-32k due to length
+        if model_called_first:  # Save completion for initial model used before fallback (e.g., length escalation)
+            initial_seed = make_completion_cache_key(
+                model_called_first,
+                language,
+                prompt,
+                temperature,
+                compress,
+                reasoning_effort if is_reasoning_model(model_called_first) else None,
+            )
             cached_key = save_completion_to_cache(
-                model_called_first + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress),
+                initial_seed,
                 [model_called_first, language, input_cost, output_cost, answer]
             )
             cached_key_list.append(cached_key)
+        cache_seed = make_completion_cache_key(
+            model,
+            language,
+            prompt,
+            temperature,
+            compress,
+            reasoning_effort if is_reasoning_model(model) else None,
+        )
         cached_key = save_completion_to_cache(
-            model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress),
+            cache_seed,
             [model, language, input_cost, output_cost, answer]
         )
         cached_key_list.append(cached_key)

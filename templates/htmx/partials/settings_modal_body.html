@@ -44,6 +44,7 @@
                 <option value="{{ option.name }}" {% if option.name == session.selected_model %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
             </select>
+            {% if reasoning_enabled %}
             <label for="reasoning_level">Reasoning effort</label>
             <select id="reasoning_level" name="reasoning_level">
                 {% for value in session.reasoning_levels %}
@@ -56,6 +57,7 @@
                 <option value="{{ value }}" {% if value == session.reasoning_verbosity %}selected{% endif %}>{{ value.title() }}</option>
                 {% endfor %}
             </select>
+            {% endif %}
             <label for="log_level">Log level</label>
             <select id="log_level" name="log_level">
                 {% for value in ["None", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}

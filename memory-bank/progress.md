@@ -24,6 +24,7 @@
 - 2025-09-29 (latest): Implemented phased HTMX upload guardrails: Phase 1/2 introduced extension/MIME allow list, chunked streaming to a locked temp dir, size caps, UTF-8 enforcement, optional `python-magic`, DOCX/PDF/JSON/TXT validators, and safer zip packaging; Phase 3 now adds decompression-bomb detection, macro linting, PDF active-content blocking, and an optional malware scan command. Syntax verified via `python -m compileall htmx_ui_main.py`.
 - 2025-09-29 (latest+1): Restricted malware scanning to genuinely new uploads so stored documents skip redundant ClamAV runs, tightened HTMX form submissions to avoid re-posting file inputs, and kept Azure Content Safety verification in place for both new uploads and stored text reuse.
 - 2025-09-29 (latest+2): Sandboxed PDF/DOCX parsing via resource-constrained worker processes (CPU/memory/time caps), surfaced friendly error handling across HTMX and CLI paths, and introduced env toggles (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`) for future tuning.
+- 2025-09-29 (latest+3): Added a background ClamAV warm-up thread on FastAPI startup so the first scan completes before users interact, replaced queued toast messages in-place to avoid duplicate banners, hid reasoning-effort controls unless a reasoning-capable model is selected, and expanded completion cache keys to include model + reasoning effort to prevent cross-model reuse.
 
 ## What Works
 
@@ -31,7 +32,9 @@
 - Structured JSON parsing & transformation into search/replace dict
 - Intended Use dependent pruning of unused template pages
 - Basic bias / risk detection + optional rewritten solution description
-- Local pickle cache keyed by MD5 of composite prompt signature (model/lang/temp/compress)
+- Local pickle cache keyed by MD5 of composite prompt signature (model/lang/temp/compress/reasoning-effort)
+- FastAPI startup primes the ClamAV scanner in a background thread so the first malware check finishes before users launch a scan
+- Reasoning effort/verbosity controls dynamically hide for non-reasoning models to keep the settings modal focused
 - Progress feedback & cost estimation (now includes reasoning token component for reasoning models)
 - Key Vault + DefaultAzureCredential (supports managed identity / keyless)
 - Download packaging (ZIP of both assessments)

@@ -66,6 +66,18 @@ The script enables strict bash options (`set -euo pipefail`) so it halts on the 
 ## Additional scripts
 
 - `rebuild_app-raiassessment.sh`: helper for redeploying the container image (see script for details).
+- `sync_env_to_containerapp.sh`: syncs key/value pairs from a local `.env` file into the Container App. Supports `--dry-run` previews, `--exclude` to skip secrets, `--env-file` to point at alternates, and `--prune` to remove obsolete app settings.
+
+### Using `sync_env_to_containerapp.sh`
+
+```bash
+cd azure-container-apps
+chmod +x sync_env_to_containerapp.sh
+./sync_env_to_containerapp.sh --env-file ../.env --dry-run
+./sync_env_to_containerapp.sh                           # applies parsed variables
+```
+
+The script validates Azure CLI login, confirms the target Container App exists, and then calls `az containerapp update --set-env-vars` with each parsed entry. Defaults align with the sample deployment (`app-raiassessment` in `cto-containers-raiassessment-rg`); override them with `--container-app` and `--resource-group` when working in other environments.
 - `tests/`: placeholder for future automated checks.
 
 ## Troubleshooting

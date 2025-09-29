@@ -5,6 +5,7 @@
 import os
 import pickle
 import hashlib
+from typing import Optional
 
 # termcolor optional (test/lean env safety). Only attempt import once.
 try:  # pragma: no cover - trivial import guard
@@ -58,6 +59,28 @@ def create_unique_identifier(question):
     question_bytes = question.encode('utf-8')
     identifier = hashlib.md5(question_bytes).hexdigest()
     return identifier
+
+
+def make_completion_cache_key(
+    model: Optional[str],
+    language: str,
+    prompt: str,
+    temperature: float,
+    compress: bool,
+    reasoning_effort: Optional[str] = None,
+) -> str:
+    """Generate a stable cache seed including model metadata and prompt content."""
+    components = [
+        f"model={model or ''}",
+        f"lang={language}",
+        f"temp={temperature}",
+        f"compress={int(bool(compress))}",
+    ]
+    if reasoning_effort:
+        components.append(f"effort={reasoning_effort}")
+    # Prompt text anchors cache to uploaded content / request payload.
+    components.append(prompt)
+    return "||".join(components)
 
 def save_completion_to_cache(question, answer):
     """

@@ -13,7 +13,12 @@ import json
 import re
 import ast
 from pprint import pprint
-from helpers.cache_completions import save_completion_to_cache, load_answer_from_completion_cache, delete_cache_entry
+from helpers.cache_completions import (
+    save_completion_to_cache,
+    load_answer_from_completion_cache,
+    delete_cache_entry,
+    make_completion_cache_key,
+)
 from helpers.completion_pricing import get_completion_pricing_from_usage
 from helpers.logging_setup import preview_sensitive_text
 from termcolor import colored
@@ -169,7 +174,8 @@ def get_azure_openai_completion(prompt, system_prompt, model=completion_model, j
     if '32-k' or 'mistral' in model.lower():
         json_mode = "text"  # GPT-4-32k does not support JSON output API parameter
 
-    cached_data, cached_key = load_answer_from_completion_cache(model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), verbose=verbose)
+    initial_cache_seed = make_completion_cache_key(model, language, prompt, temperature, compress)
+    cached_data, cached_key = load_answer_from_completion_cache(initial_cache_seed, verbose=verbose)
     cached_model, cached_language, cached_input_cost, cached_output_cost, cached_response = cached_data[0:5] if cached_data else [None, None, None, None, None]
     # generate a random seconds between min_sleep and max_sleep seconds
     sleep_time = random.randint(min_sleep, max_sleep)
@@ -253,10 +259,12 @@ def get_azure_openai_completion(prompt, system_prompt, model=completion_model, j
     answer = response.choices[0].message.content if response and response.choices and len(response.choices) > 0 and response.choices[0].message.content else ""
     cached_key_list = []
     if answer != "":
+        final_cache_seed = make_completion_cache_key(model, language, prompt, temperature, compress)
         if model_called_first:  # Save the completion to the cache with the model called first if it was changed to use gpt-4-32k due to length
-            cached_key = save_completion_to_cache(model_called_first + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), [model_called_first, language, input_cost, output_cost, answer])
+            initial_seed = make_completion_cache_key(model_called_first, language, prompt, temperature, compress)
+            cached_key = save_completion_to_cache(initial_seed, [model_called_first, language, input_cost, output_cost, answer])
             cached_key_list.append(cached_key)
-        cached_key = save_completion_to_cache(model + '_' + language + '_' + prompt + '_' + str(temperature) + '_' + str(compress), [model, language, input_cost, output_cost, answer])
+        cached_key = save_completion_to_cache(final_cache_seed, [model, language, input_cost, output_cost, answer])
         cached_key_list.append(cached_key)
 
     return answer, completion_cost, response.usage.prompt_tokens, response.usage.completion_tokens, cached_key_list

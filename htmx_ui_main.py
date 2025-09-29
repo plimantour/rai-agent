@@ -656,11 +656,13 @@ def render_dashboard(request: Request, session: SessionState, user: UserContext,
 
 def render_settings_modal(request: Request, session: SessionState, user: UserContext) -> HTMLResponse:
     build_time = os.getenv("BUILD_TIME", "Unknown build time")
+    reasoning_enabled = is_reasoning_model(session.selected_model)
     context = {
         "request": request,
         "session": session,
         "user": user,
         "model_options": model_options_for_template(session.selected_model),
+        "reasoning_enabled": reasoning_enabled,
         "admin_downloads": {
             "system_logs": bool(collect_system_log_files()),
         },
@@ -1171,27 +1173,29 @@ async def update_model_options(request: Request):
             append_log_to_blob(f"{session.user_info or user.display_name} : Changed LLM model to {selected_model}")
         except Exception as exc:
             log.debug("Unable to log model change: %s", exc)
-    reasoning_level = form.get("reasoning_level") or session.reasoning_level
-    if reasoning_level not in session.reasoning_levels:
-        reasoning_level = session.reasoning_levels[0]
-    if reasoning_level != session.reasoning_level:
-        session.reasoning_level = reasoning_level
-        messages.append(f"Reasoning effort set to {reasoning_level}.")
-        try:
-            append_log_to_blob(f"{session.user_info or user.display_name} : Changed reasoning effort to {reasoning_level}")
-        except Exception:
-            pass
-    reasoning_verbosity = form.get("reasoning_verbosity") or session.reasoning_verbosity
-    if reasoning_verbosity not in ("low", "medium", "high"):
-        reasoning_verbosity = "low"
-    if reasoning_verbosity != session.reasoning_verbosity:
-        session.reasoning_verbosity = reasoning_verbosity
-        set_reasoning_verbosity(reasoning_verbosity)
-        messages.append(f"Reasoning verbosity set to {reasoning_verbosity}.")
-        try:
-            append_log_to_blob(f"{session.user_info or user.display_name} : Changed reasoning verbosity to {reasoning_verbosity}")
-        except Exception:
-            pass
+    model_supports_reasoning = is_reasoning_model(session.selected_model)
+    if model_supports_reasoning:
+        reasoning_level = form.get("reasoning_level") or session.reasoning_level
+        if reasoning_level not in session.reasoning_levels:
+            reasoning_level = session.reasoning_levels[0]
+        if reasoning_level != session.reasoning_level:
+            session.reasoning_level = reasoning_level
+            messages.append(f"Reasoning effort set to {reasoning_level}.")
+            try:
+                append_log_to_blob(f"{session.user_info or user.display_name} : Changed reasoning effort to {reasoning_level}")
+            except Exception:
+                pass
+        reasoning_verbosity = form.get("reasoning_verbosity") or session.reasoning_verbosity
+        if reasoning_verbosity not in ("low", "medium", "high"):
+            reasoning_verbosity = "low"
+        if reasoning_verbosity != session.reasoning_verbosity:
+            session.reasoning_verbosity = reasoning_verbosity
+            set_reasoning_verbosity(reasoning_verbosity)
+            messages.append(f"Reasoning verbosity set to {reasoning_verbosity}.")
+            try:
+                append_log_to_blob(f"{session.user_info or user.display_name} : Changed reasoning verbosity to {reasoning_verbosity}")
+            except Exception:
+                pass
     log_level = form.get("log_level") or "None"
     if log_level != session.log_level:
         session.log_level = log_level
