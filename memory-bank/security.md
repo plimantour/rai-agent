@@ -18,7 +18,7 @@
 1. Sanitize or escape all LLM-generated markup before rendering; consider server-side sanitization (e.g., `bleach`) or client-side rendering that strips scripts/attributes. ✅ Implemented via server-side markdown sanitization with Bleach (Sep 2025).
 2. Update toast rendering to use `textContent`/DOM nodes and ensure backend messages are HTML-escaped. ✅ Implemented with escaped payloads and client-side `textContent` rendering (Sep 2025).
 3. Introduce CSRF tokens for every state-changing POST, wiring tokens through HTMX headers or hidden inputs. ✅ Implemented via per-session tokens, HTMX request headers, and server-side validation (Sep 2025).
-4. Validate Microsoft Graph tokens beyond a simple profile fetch (audience/app ID, issuer) before trusting identity information.
+4. Validate Microsoft Graph tokens beyond a simple profile fetch (audience/app ID, issuer) before trusting identity information. ✅ Implemented by verifying signature, issuer, tenant, and client ID (Sep 2025).
 5. Apply upload safeguards: enforce max size, MIME/type checking, and scan DOCX/PDF content; harden `extract_text_from_input` against decompression bombs.
 6. Pin or self-host htmx with SRI support to prevent CDN supply-chain attacks.
 7. Add session expiry/cleanup and normalize/escape identifiers before writing to blob logs and append-only storage.
@@ -41,6 +41,7 @@
 - **CSRF tokens enforced:** Each session now issues a cryptographically random token stored in server memory, injected into forms/meta tags, attached to HTMX headers, and validated on every state-changing POST (including auth, uploads, settings, and admin endpoints).
 - **Prompt shield pre-checks:** `helpers/content_safety.ensure_uploaded_text_safe` runs Azure Content Safety Prompt Shields against every uploaded/analysis document with retries, caching, and managed identity authentication; unsafe content is rejected with user-visible messaging.
 - **Managed identity-only data plane access:** All calls to Azure OpenAI, Content Safety, Key Vault, and Blob Storage use the container app's managed identity; end-user tokens are never forwarded, reducing impersonation risk.
+- **Token signature validation:** `helpers/token_validation.validate_graph_access_token` verifies Graph access tokens offline (signature when available, otherwise strict claim checks for issuer/tenant/client) before the app trusts session identity data; production login confirmed.
 - **Container env management:** `.dockerignore` deliberately excludes `.env`; secrets stay local and are projected into Azure via `azure-container-apps/sync_env_to_containerapp.sh` (supports `--dry-run`, `--exclude`, `--prune`). Operators review planned changes before applying and avoid `--prune` unless the dotenv file is canonical for the environment.
 
 ## Backend Threat Summary
@@ -50,15 +51,15 @@
 | High | Rendering | LLM HTML injected via `analysis_result.html|safe` | ✅ Implemented – bleach-sanitized markdown output |
 | High | Notifications | Toasts rendered with `innerHTML` | ✅ Implemented – escaped backend payloads + text-only rendering |
 | High | Prompt Safety | Prompt injection via uploaded content | Open – add guard prompts/moderation |
-| High | Request AuthZ | Cross-site request forgery on HTMX POSTs | Implemented – per-session tokens validated on every POST |
-| Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | Open – enforce token validation |
+| High | Request AuthZ | Cross-site request forgery on HTMX POSTs | ✅ Implemented – per-session tokens validated on every POST |
+| Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | ✅ Implemented – token signature, issuer, tenant, and client checks |
 | Medium | File Handling | Upload pipeline lacks size/type checks | Open – add bounds + scanning |
 | Medium | File Parsing | Untrusted PDFs/DOCX parsed without sandboxing | Open – sandbox parsers |
 | Medium | Supply Chain | htmx pulled from CDN without SRI | Open – pin or self-host |
 | Medium | Resource Usage | No rate limiting on long-running jobs | Open – add quotas/queues |
 | Low | Session/Logging | Sessions never expire; logs accept raw identifiers | Open – add expiry + log normalization |
 | Low | Output Retention | Generated artifacts linger on disk | Open – enforce retention |
-| Low | Progress Hooks | Progress messages sanitized | Implemented |
-| Low | AuthN/AuthZ | Entra ID login + Key Vault allow list | Implemented |
-| Low | Admin Controls | Admin roster sourced from Key Vault secret | Implemented |
-| Low | Logging Controls | Diagnostics disabled by default; admin-only toggle | Implemented |
+| Low | Progress Hooks | Progress messages sanitized | ✅ Implemented |
+| Low | AuthN/AuthZ | Entra ID login + Key Vault allow list | ✅ Implemented |
+| Low | Admin Controls | Admin roster sourced from Key Vault secret | ✅ Implemented |
+| Low | Logging Controls | Diagnostics disabled by default; admin-only toggle | ✅ Implemented |

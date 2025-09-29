@@ -53,6 +53,7 @@ from helpers.content_safety import (
     PromptShieldServiceError,
     ensure_uploaded_text_safe,
 )
+from helpers.token_validation import TokenValidationError, validate_graph_access_token
 from prompts.prompts_engineering_llmlingua import (get_last_reasoning_summary,
                                                    initialize_ai_models,
                                                    last_reasoning_fallback_used,
@@ -809,6 +810,15 @@ async def establish_session(request: Request, payload: LoginRequest):
     if not access_token:
         raise HTTPException(status_code=400, detail="Missing access token")
 
+    tenant_id = os.getenv("AZURE_TENANT_ID", "").strip() or None
+    client_id = os.getenv("AZURE_APP_REGISTRATION_CLIENT_ID", "").strip() or None
+
+    try:
+        claims = validate_graph_access_token(access_token, tenant_id, client_id)
+    except TokenValidationError as exc:
+        log.warning("Access token validation failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid access token") from exc
+
     try:
         graph_response = requests.get(
             "https://graph.microsoft.com/v1.0/me",
@@ -828,8 +838,19 @@ async def establish_session(request: Request, payload: LoginRequest):
     display_name = profile.get("displayName")
     preferred_username = profile.get("userPrincipalName") or profile.get("mail")
 
+    token_object_id = str(claims.get("oid") or claims.get("sub") or "")
+    if token_object_id and user_id and token_object_id.lower() != user_id.lower():
+        log.info("Graph profile id mismatch: token oid=%s profile id=%s", token_object_id, user_id)
+
     if not user_id or not display_name:
-        raise HTTPException(status_code=401, detail="Incomplete profile information")
+        fallback_name = claims.get("name")
+        fallback_upn = claims.get("preferred_username") or claims.get("upn")
+        if token_object_id and fallback_name:
+            user_id = user_id or token_object_id
+            display_name = display_name or fallback_name
+            preferred_username = preferred_username or fallback_upn
+        else:
+            raise HTTPException(status_code=401, detail="Incomplete profile information")
 
     allow_list = load_allow_list()
     identifiers = (display_name, preferred_username, user_id)

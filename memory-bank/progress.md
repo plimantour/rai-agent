@@ -20,6 +20,7 @@
 - 2025-09-28 (late): Wired Azure Content Safety Prompt Shields into HTMX upload/analysis flows (managed identity auth, retry/caching helper, user messaging) and extended the Container Apps setup script to auto-provision the Content Safety resource plus RBAC (`Cognitive Services User`) while documenting new `AZURE_CONTENT_SAFETY_*` env vars in `.env`/`.env.template`.
 - 2025-09-28 (latest): Validated managed-identity access against the custom Content Safety subdomain, updated `helpers/content_safety.py` to send `userPrompt` + `documents` as plain strings per the REST contract, refreshed the cache key to prevent stale verdict reuse, and confirmed `.env` / `.env.template` configurations align with the working curl sample for future debugging.
 - 2025-09-29: Added `.dockerignore` to shrink the Docker build context, created `azure-container-apps/sync_env_to_containerapp.sh` to replicate local `.env` values into the Container App (with dry-run/exclude/prune options), and updated the markdown sanitizer to allow heading tags so HTMX renders analysis sections with proper titles.
+- 2025-09-29 (later): Hardened `/auth/session` with offline token validation (signature and claim checks with safe fallback) and confirmed production login works under the stricter validation path.
 
 ## What Works
 

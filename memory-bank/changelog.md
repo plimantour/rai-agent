@@ -7,6 +7,7 @@
 
 ### Fixed
 - HTMX markdown sanitizer now allows heading tags so analysis output renders section titles correctly instead of appearing as bullet points.
+- `/auth/session` now verifies Microsoft Graph access tokens offline (signature + strict claim validation with managed fallback) before calling Graph, resolving login failures after hardening.
 
 ## 2025-09-28
 ### Added
