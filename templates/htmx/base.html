@@ -7,7 +7,7 @@
         <meta name="csrf-token" content="{{ csrf_token or '' }}">
     <title>{{ title or "RAI Assessment Copilot" }}</title>
     <link rel="stylesheet" href="/static/css/app.css{% if static_version %}?v={{ static_version }}{% endif %}">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="/static/js/htmx.min.js{% if static_version %}?v={{ static_version }}{% endif %}"></script>
 </head>
 <body class="theme-{{ session_theme }}">
     <header class="app-header">
