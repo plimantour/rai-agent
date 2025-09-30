@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import re
 import sys
@@ -11,6 +10,7 @@ import textwrap
 import urllib.error
 import urllib.request
 from pathlib import Path
+from datetime import datetime, timezone
 
 GITHUB_RELEASES_API = "https://api.github.com/repos/bigskysoftware/htmx/releases/latest"
 DOWNLOAD_URL_TEMPLATE = "https://unpkg.com/htmx.org@{version}/dist/htmx.min.js"
@@ -64,7 +64,7 @@ def download_htmx(version: str) -> bytes:
 
 def backup_file(path: Path) -> Path:
     """Create a timestamped backup alongside the original file."""
-    timestamp = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup_path = path.with_name(f"{path.name}.{timestamp}.bak")
     backup_path.write_bytes(path.read_bytes())
     return backup_path

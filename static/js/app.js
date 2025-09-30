@@ -13,6 +13,22 @@
     let activeLoadingPath = null;
     const TOAST_DEDUPE_WINDOW_MS = 45000;
 
+    function configureHtmxDefaults() {
+        const { htmx } = window;
+        if (!htmx || !htmx.config) {
+            return false;
+        }
+        htmx.config.reportValidityOfForms = true;
+        htmx.config.scrollBehavior = "smooth";
+        return true;
+    }
+
+    if (!configureHtmxDefaults()) {
+        document.addEventListener("DOMContentLoaded", () => {
+            configureHtmxDefaults();
+        }, { once: true });
+    }
+
     function showToast(message) {
         updateUploadOverlayForMessage(message);
         const container = getToastContainer();
