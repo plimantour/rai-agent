@@ -350,6 +350,7 @@ class SessionState:
     progress_active: bool = False
     stored_solution_text: Optional[str] = None
     stored_solution_filename: Optional[str] = None
+    stored_solution_validated: bool = False
     user_info: str = ""
     has_logged_access: bool = False
     cached_user: Optional['UserContext'] = None
@@ -426,6 +427,9 @@ def ensure_session(request: Request) -> Tuple[str, SessionState, bool]:
         if not hasattr(session, "stored_solution_text"):
             session.stored_solution_text = None
             session.stored_solution_filename = None
+            session.stored_solution_validated = False
+        if not hasattr(session, "stored_solution_validated"):
+            session.stored_solution_validated = False
         if not hasattr(session, "settings_loaded"):
             session.settings_loaded = False
             session.settings_restored = False
@@ -570,14 +574,6 @@ def pop_messages(session: SessionState, extra: Optional[List[str]] = None) -> Li
     if extra:
         messages.extend(extra)
     return messages
-
-
-def replace_last_message(session: SessionState, message: str) -> None:
-    """Replace the most recent session toast message, or append if none exist."""
-    if session.messages:
-        session.messages[-1] = message
-    else:
-        session.messages.append(message)
 
 
 def model_options_for_template(selected: str) -> List[dict]:
@@ -883,9 +879,16 @@ def remove_file_safe(path: str) -> None:
         log.debug("Failed to remove %s: %s", path, exc)
 
 
-def _set_stored_solution(session: SessionState, filename: str, text: str) -> None:
+def _set_stored_solution(session: SessionState, filename: str, text: str, *, validated: bool) -> None:
     session.stored_solution_text = text
     session.stored_solution_filename = filename
+    session.stored_solution_validated = validated
+
+
+def _clear_stored_solution(session: SessionState) -> None:
+    session.stored_solution_text = None
+    session.stored_solution_filename = None
+    session.stored_solution_validated = False
 
 
 def _stored_solution_root(session: SessionState) -> str:
@@ -1412,6 +1415,35 @@ def _extract_text_from_upload(upload: UploadFile) -> Tuple[str, str]:
     return filename_root, text
 
 
+async def _ingest_new_solution_upload(session: SessionState, upload: UploadFile) -> Optional[Tuple[str, str, str]]:
+    session.messages.append("Scanning uploaded document for threats. Please wait...")
+    filename_root, text = _extract_text_from_upload(upload)
+    display_name = upload.filename or f"{filename_root}.docx"
+    session.messages.append("Malware scan complete. Running responsible AI scan on the content...")
+    if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+        session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
+        return None
+    session.messages.append("Scan complete: no threats detected.")
+    _set_stored_solution(session, display_name, text, validated=True)
+    return filename_root, text, display_name
+
+
+async def _ensure_stored_solution_valid(session: SessionState) -> bool:
+    if not session.stored_solution_text:
+        return False
+    if session.stored_solution_validated:
+        return True
+    session.messages.append("Running responsible AI scan on stored content...")
+    display_name = session.stored_solution_filename or "Stored solution description"
+    if not await _validate_solution_text_with_prompt_shield(session, session.stored_solution_text, display_name):
+        session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
+        _clear_stored_solution(session)
+        return False
+    session.messages.append("Scan complete: no threats detected.")
+    session.stored_solution_validated = True
+    return True
+
+
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_solution_description(request: Request, file: UploadFile = File(None)):
     session_id, session, created, user = await get_session_and_user(request)
@@ -1424,17 +1456,13 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
         if created:
             response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
         return response
-    session.messages.append("Scanning uploaded document for threats. Please wait...")
-    filename_root, text = _extract_text_from_upload(file)
-    display_name = file.filename or f"{filename_root}.docx"
-    if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
-        replace_last_message(session, "Scan blocked: Azure Content Safety rejected the document.")
+    ingest_result = await _ingest_new_solution_upload(session, file)
+    if ingest_result is None:
         response = render_dashboard(request, session, user, partial=True)
         if created:
             response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
         return response
-    replace_last_message(session, "Scan complete: no threats detected.")
-    _set_stored_solution(session, display_name, text)
+    _, _, display_name = ingest_result
     session.messages.append(f"Stored '{display_name}' for reuse.")
     try:
         append_log_to_blob(f"{session.user_info or user.display_name} : Uploaded solution description - {display_name}")
@@ -1453,8 +1481,7 @@ async def clear_stored_solution(request: Request):
         raise HTTPException(status_code=403, detail="Unauthorized")
     await enforce_csrf(request, session)
     had_value = bool(session.stored_solution_text)
-    session.stored_solution_text = None
-    session.stored_solution_filename = None
+    _clear_stored_solution(session)
     session.messages.append("Cleared stored solution description." if had_value else "No stored solution description to clear.")
     response = render_dashboard(request, session, user, partial=True)
     if created:
@@ -1475,34 +1502,29 @@ async def analyze_solution(request: Request, file: UploadFile = File(None)):
     filename = (file.filename if file else "") or ""
     has_new_upload = bool(filename.strip())
     if has_new_upload:
-        session.messages.append("Scanning uploaded document for threats. Please wait...")
-        filename_root, text = _extract_text_from_upload(file)
-        display_name = filename or f"{filename_root}.docx"
-        if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
-            replace_last_message(session, "Scan blocked: Azure Content Safety rejected the document.")
+        ingest_result = await _ingest_new_solution_upload(session, file)
+        if ingest_result is None:
             response = render_dashboard(request, session, user, partial=True)
             if created:
                 response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
             return response
-        replace_last_message(session, "Scan complete: no threats detected.")
-        _set_stored_solution(session, display_name, text)
+        filename_root, text, display_name = ingest_result
     else:
-        text = session.stored_solution_text
-        if not text:
+        if not session.stored_solution_text:
             session.messages.append("Upload a solution description before running analysis.")
             response = render_dashboard(request, session, user, partial=True)
             if created:
                 response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
             return response
+        if not session.stored_solution_validated:
+            if not await _ensure_stored_solution_valid(session):
+                response = render_dashboard(request, session, user, partial=True)
+                if created:
+                    response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+                return response
+        text = session.stored_solution_text
         filename_root = _stored_solution_root(session)
         display_name = session.stored_solution_filename or "Stored solution description"
-        if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
-            session.stored_solution_text = None
-            session.stored_solution_filename = None
-            response = render_dashboard(request, session, user, partial=True)
-            if created:
-                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
-            return response
 
     session.live_progress = []
     session.progress_pending_toasts = []
@@ -1592,19 +1614,27 @@ async def generate_assessment(request: Request, file: UploadFile = File(None)):
     filename = (file.filename if file else "") or ""
     has_new_upload = bool(filename.strip())
     if has_new_upload:
-        session.messages.append("Scanning uploaded document for threats. Please wait...")
-        filename_root, text = _extract_text_from_upload(file)
-        display_name = filename or f"{filename_root}.docx"
-        replace_last_message(session, "Scan complete: no threats detected.")
-        _set_stored_solution(session, display_name, text)
+        ingest_result = await _ingest_new_solution_upload(session, file)
+        if ingest_result is None:
+            response = render_dashboard(request, session, user, partial=True)
+            if created:
+                response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+            return response
+        filename_root, text, display_name = ingest_result
     else:
-        text = session.stored_solution_text
-        if not text:
+        if not session.stored_solution_text:
             session.messages.append("Upload a solution description before generating a draft.")
             response = render_dashboard(request, session, user, partial=True)
             if created:
                 response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
             return response
+        if not session.stored_solution_validated:
+            if not await _ensure_stored_solution_valid(session):
+                response = render_dashboard(request, session, user, partial=True)
+                if created:
+                    response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+                return response
+        text = session.stored_solution_text
         filename_root = _stored_solution_root(session)
         display_name = session.stored_solution_filename or "Stored solution description"
 

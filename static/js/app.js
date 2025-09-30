@@ -7,7 +7,13 @@
     let settingsButton = null;
     let lastFocusedElement = null;
     let loadingOverlay = null;
+    let loadingOverlayText = null;
+    let defaultLoadingText = "Working on it...";
+    let uploadSpinnerTimer = null;
     let recentToasts = new Set();
+    let activeLoadingPath = null;
+    const UPLOAD_STEP_DELAY_MS = 1200;
+    const TOAST_DEDUPE_WINDOW_MS = 45000;
 
     function getToastContainer() {
         return document.getElementById("toast-container");
@@ -24,8 +30,8 @@
         if (recentToasts.has(message)) {
             return;
         }
-        recentToasts.add(message);
-        setTimeout(() => recentToasts.delete(message), 5000);
+    recentToasts.add(message);
+    setTimeout(() => recentToasts.delete(message), TOAST_DEDUPE_WINDOW_MS);
         
         const toast = document.createElement("div");
         toast.className = "toast";
@@ -168,6 +174,14 @@
         return ["/analysis", "/generate", "/upload"].some((candidate) => matchesActionPath(path, candidate));
     }
 
+    function deriveEventPath(evt) {
+        const path = evt?.detail?.requestConfig?.path || evt?.detail?.pathInfo?.path;
+        if (path) {
+            return path;
+        }
+        return activeLoadingPath;
+    }
+
     function extractErrorDetail(xhr) {
         if (!xhr) {
             return null;
@@ -196,9 +210,38 @@
         return null;
     }
 
-    function showLoadingOverlay() {
+    function setLoadingText(text) {
+        if (!loadingOverlayText) {
+            return;
+        }
+        loadingOverlayText.textContent = text;
+    }
+
+    function resetLoadingText() {
+        setLoadingText(defaultLoadingText);
+    }
+
+    function showLoadingOverlay(path) {
         if (!loadingOverlay) {
             return;
+        }
+        activeLoadingPath = path || null;
+        if (matchesActionPath(path, "/upload")) {
+            if (uploadSpinnerTimer) {
+                clearTimeout(uploadSpinnerTimer);
+            }
+            setLoadingText("Scanning uploaded document for threats. Please wait...");
+            showToast("Scanning uploaded document for threats. Please wait...");
+            uploadSpinnerTimer = window.setTimeout(() => {
+                setLoadingText("Running responsible AI scan on the content...");
+                showToast("Malware scan complete. Running responsible AI scan on the content...");
+            }, UPLOAD_STEP_DELAY_MS);
+        } else {
+            if (uploadSpinnerTimer) {
+                clearTimeout(uploadSpinnerTimer);
+                uploadSpinnerTimer = null;
+            }
+            resetLoadingText();
         }
         loadingOverlay.classList.add("is-active");
         loadingOverlay.setAttribute("aria-hidden", "false");
@@ -210,6 +253,12 @@
         }
         loadingOverlay.classList.remove("is-active");
         loadingOverlay.setAttribute("aria-hidden", "true");
+        if (uploadSpinnerTimer) {
+            clearTimeout(uploadSpinnerTimer);
+            uploadSpinnerTimer = null;
+        }
+        resetLoadingText();
+        activeLoadingPath = null;
     }
 
     function handleThemeChange(theme) {
@@ -441,21 +490,25 @@
         });
 
         document.body?.addEventListener("htmx:beforeRequest", (evt) => {
-            const path = evt.detail?.requestConfig?.path || evt.detail?.pathInfo?.path;
+            const path = deriveEventPath(evt);
             if (matchesActionPath(path, "/analysis")) {
                 showToast("Analyzing solution description…");
             } else if (matchesActionPath(path, "/generate")) {
                 showToast("Generating draft RAI assessment…");
-            } else if (matchesActionPath(path, "/upload")) {
-                showToast("Scanning uploaded document for threats. Please wait...");
             }
             if (shouldShowLoading(path)) {
-                showLoadingOverlay();
+                showLoadingOverlay(path);
             }
         });
 
-        document.body?.addEventListener("htmx:afterRequest", () => {
-            hideLoadingOverlay();
+        document.body?.addEventListener("htmx:afterRequest", (evt) => {
+            const path = deriveEventPath(evt);
+            if (!shouldShowLoading(path)) {
+                return;
+            }
+            if (matchesActionPath(path, "/upload")) {
+                hideLoadingOverlay();
+            }
         });
 
         document.body?.addEventListener("htmx:responseError", (evt) => {
@@ -477,6 +530,10 @@
             const target = evt.detail?.target || null;
             if (target) {
                 consumeToastPayloads(target);
+            }
+            const path = deriveEventPath(evt);
+            if (path && shouldShowLoading(path)) {
+                hideLoadingOverlay();
             }
             const syncToastPayloads = () => consumeToastPayloads(document);
             if (typeof queueMicrotask === "function") {
@@ -509,6 +566,10 @@
         settingsModal = document.getElementById("settings-modal");
         settingsButton = document.getElementById("settings-button");
         loadingOverlay = document.getElementById("loading-overlay");
+        loadingOverlayText = loadingOverlay ? loadingOverlay.querySelector(".loading-text") : null;
+        if (loadingOverlayText && loadingOverlayText.textContent && loadingOverlayText.textContent.trim().length > 0) {
+            defaultLoadingText = loadingOverlayText.textContent.trim();
+        }
 
         settingsButton?.addEventListener("click", () => {
             openSettingsModal();

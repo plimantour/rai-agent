@@ -25,6 +25,7 @@
 - 2025-09-29 (latest+1): Restricted malware scanning to genuinely new uploads so stored documents skip redundant ClamAV runs, tightened HTMX form submissions to avoid re-posting file inputs, and kept Azure Content Safety verification in place for both new uploads and stored text reuse.
 - 2025-09-29 (latest+2): Sandboxed PDF/DOCX parsing via resource-constrained worker processes (CPU/memory/time caps), surfaced friendly error handling across HTMX and CLI paths, and introduced env toggles (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`) for future tuning.
 - 2025-09-29 (latest+3): Added a background ClamAV warm-up thread on FastAPI startup so the first scan completes before users interact, replaced queued toast messages in-place to avoid duplicate banners, hid reasoning-effort controls unless a reasoning-capable model is selected, and expanded completion cache keys to include model + reasoning effort to prevent cross-model reuse.
+- 2025-09-30: Centralized HTMX upload ingestion so malware and Content Safety scanners mark a `stored_solution_validated` flag and skip redundant scans during downstream analysis/generation, rewired upload/analysis/generation routes to reuse the shared helper, and refreshed the spinner/toast UX so users see explicit virus scan vs Responsible AI steps with notifications surfacing immediately even while the overlay remains until results render.
 
 ## What Works
 

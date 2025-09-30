@@ -523,7 +523,7 @@ body.theme-dark .icon-button:hover {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    z-index: 1000;
+    z-index: 1200;
     pointer-events: none;
 }
 
