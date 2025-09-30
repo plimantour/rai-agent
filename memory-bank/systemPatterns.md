@@ -21,6 +21,7 @@ Upload DOCX → Extract raw text inside sandboxed worker (resource caps via `UPL
 - Allow and admin rosters centralized in Key Vault secrets so access can be rotated without code changes.
 - Azure Content Safety Prompt Shields enforce pre-ingestion scanning using managed identity-authenticated REST calls; helper caches verdicts to reduce duplicate scans and surfaces developer-friendly diagnostics.
 - HTMX upload ingestion helper persists a `stored_solution_validated` flag in session state so downstream analysis/generation paths trust previously scanned text, eliminating duplicate ClamAV or Content Safety invocations while still forcing revalidation when a new file arrives.
+- Prompt sanitizer helper (`sanitize_prompt_input`) runs after Content Safety to normalize user uploads, neutralize jailbreak directives, escape template markers, and optionally block high-risk patterns before prompts are built, giving future user inputs a reusable defense layer.
 - Optional llmlingua compression controlled per-run to manage risk of semantic loss.
 - Bias / risk analysis separated from generation (distinct functions) enabling optional pre-flight validation.
 - HTMX UI hardened with per-session CSRF tokens and session-scoped toast dedupe to avoid replay.

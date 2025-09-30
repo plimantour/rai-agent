@@ -9,30 +9,23 @@
     let loadingOverlay = null;
     let loadingOverlayText = null;
     let defaultLoadingText = "Working on it...";
-    let uploadSpinnerTimer = null;
     let recentToasts = new Set();
     let activeLoadingPath = null;
-    const UPLOAD_STEP_DELAY_MS = 1200;
     const TOAST_DEDUPE_WINDOW_MS = 45000;
 
-    function getToastContainer() {
-        return document.getElementById("toast-container");
-    }
-
     function showToast(message) {
+        updateUploadOverlayForMessage(message);
         const container = getToastContainer();
         if (!container) {
             console.warn("Toast container missing");
             return;
         }
-        
-        // Prevent duplicate toasts within 5 seconds
         if (recentToasts.has(message)) {
             return;
         }
-    recentToasts.add(message);
-    setTimeout(() => recentToasts.delete(message), TOAST_DEDUPE_WINDOW_MS);
-        
+        recentToasts.add(message);
+        setTimeout(() => recentToasts.delete(message), TOAST_DEDUPE_WINDOW_MS);
+
         const toast = document.createElement("div");
         toast.className = "toast";
         toast.textContent = message;
@@ -44,6 +37,10 @@
             toast.classList.remove("show");
             setTimeout(() => toast.remove(), 250);
         }, 5000);
+    }
+
+    function getToastContainer() {
+        return document.getElementById("toast-container");
     }
 
     function normalizeToastMessage(value) {
@@ -221,26 +218,43 @@
         setLoadingText(defaultLoadingText);
     }
 
+    function updateUploadOverlayForMessage(message) {
+        if (!loadingOverlay || !activeLoadingPath) {
+            return;
+        }
+        if (!matchesActionPath(activeLoadingPath, "/upload")) {
+            return;
+        }
+        if (typeof message !== "string" || message.trim().length === 0) {
+            return;
+        }
+        const normalized = message.trim().toLowerCase();
+        if (normalized.startsWith("malware scan complete")) {
+            setLoadingText("Running responsible AI scan on the content...");
+        } else if (normalized.startsWith("responsible ai scan complete")) {
+            setLoadingText("Applying prompt sanitizer safeguards to the document...");
+        } else if (
+            normalized.startsWith("prompt sanitizer adjusted") ||
+            normalized.startsWith("prompt sanitizer normalized") ||
+            normalized.startsWith("prompt sanitizer completed")
+        ) {
+            setLoadingText("Finalizing security checks...");
+        } else if (normalized.startsWith("scan blocked")) {
+            setLoadingText("Upload blocked by security checks.");
+        } else if (normalized.startsWith("security checks complete")) {
+            setLoadingText("Security checks complete. Preparing upload...");
+        }
+    }
+
     function showLoadingOverlay(path) {
         if (!loadingOverlay) {
             return;
         }
         activeLoadingPath = path || null;
         if (matchesActionPath(path, "/upload")) {
-            if (uploadSpinnerTimer) {
-                clearTimeout(uploadSpinnerTimer);
-            }
             setLoadingText("Scanning uploaded document for threats. Please wait...");
             showToast("Scanning uploaded document for threats. Please wait...");
-            uploadSpinnerTimer = window.setTimeout(() => {
-                setLoadingText("Running responsible AI scan on the content...");
-                showToast("Malware scan complete. Running responsible AI scan on the content...");
-            }, UPLOAD_STEP_DELAY_MS);
         } else {
-            if (uploadSpinnerTimer) {
-                clearTimeout(uploadSpinnerTimer);
-                uploadSpinnerTimer = null;
-            }
             resetLoadingText();
         }
         loadingOverlay.classList.add("is-active");
@@ -253,10 +267,6 @@
         }
         loadingOverlay.classList.remove("is-active");
         loadingOverlay.setAttribute("aria-hidden", "true");
-        if (uploadSpinnerTimer) {
-            clearTimeout(uploadSpinnerTimer);
-            uploadSpinnerTimer = null;
-        }
         resetLoadingText();
         activeLoadingPath = null;
     }

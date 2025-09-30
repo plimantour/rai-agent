@@ -55,6 +55,7 @@ from helpers.content_safety import (
     PromptShieldServiceError,
     ensure_uploaded_text_safe,
 )
+from helpers.prompt_sanitizer import sanitize_prompt_input
 from helpers.token_validation import TokenValidationError, validate_graph_access_token
 from prompts.prompts_engineering_llmlingua import (get_last_reasoning_summary,
                                                    initialize_ai_models,
@@ -1423,7 +1424,34 @@ async def _ingest_new_solution_upload(session: SessionState, upload: UploadFile)
     if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
         session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
         return None
-    session.messages.append("Scan complete: no threats detected.")
+    session.messages.append("Responsible AI scan complete. Applying prompt sanitizer safeguards to the document...")
+    sanitizer_result = sanitize_prompt_input(text)
+    if sanitizer_result.blocked:
+        session.messages.append("Scan blocked: prompt sanitizer detected hostile instructions.")
+        log.warning("Prompt sanitizer blocked upload '%s'", display_name)
+        return None
+    text = sanitizer_result.text
+    sanitized_directives = [finding for finding in sanitizer_result.findings if finding.replacement]
+    if sanitized_directives:
+        session.messages.append("Prompt sanitizer adjusted the document to neutralize risky directives.")
+    elif sanitizer_result.findings:
+        session.messages.append("Prompt sanitizer normalized the document and found no risky directives.")
+    else:
+        session.messages.append("Prompt sanitizer completed with no risky directives detected.")
+    if sanitizer_result.findings:
+        log.info(
+            "Prompt sanitizer recorded %s findings for upload '%s'",
+            len(sanitizer_result.findings),
+            display_name,
+        )
+        for finding in sanitizer_result.findings:
+            log.debug(
+                "Sanitizer finding: %s (original=%s replacement=%s)",
+                finding.message,
+                finding.original,
+                finding.replacement,
+            )
+    session.messages.append("Security checks complete. Stored sanitized document.")
     _set_stored_solution(session, display_name, text, validated=True)
     return filename_root, text, display_name
 

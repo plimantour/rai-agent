@@ -6,7 +6,7 @@
 | Presentation | `streamlit_ui_main.py`, `htmx_ui_main.py` | Streamlit and HTMX/FastAPI surfaces (MSAL auth, progress UX, admin model & reasoning selection, prompt shield gating, CSRF validation) |
 | CLI | `main.py` | Headless batch generation of RAI assessment drafts |
 | Orchestration / Pipeline | `prompts/prompts_engineering_llmlingua.py` | Multi-step prompt execution, adaptive reasoning parameter handling, caching & cost accumulation |
-| Utilities | `helpers/*.py` | DOCX manipulation, pricing, caching, auth, blob logging, Key Vault access, Content Safety prompt shielding |
+| Utilities | `helpers/*.py` | DOCX manipulation, pricing, caching, auth, blob logging, Key Vault access, malware scanning (with startup warm-up), Content Safety prompt shielding, prompt sanitization |
 | Model / Pricing Metadata | `helpers/completion_pricing.py` | Legacy + extended metadata (context window, reasoning flag, pricing incl. cached & reasoning tokens) |
 | Persistence / External | Azure OpenAI, Key Vault, Blob Storage, (future Redis) | Model inference, secret storage, logging, shared cache (planned) |
 | Templates / Assets | `rai-template/*.docx` | Master DOCX templates (internal + public) |
@@ -14,8 +14,10 @@
 ## 2. Data Flow (UI Path)
 ```
 User Uploads DOCX
-  → Extract text inside sandboxed worker (`helpers/docs_utils` with `UPLOAD_PARSER_*` caps)
+  → Stream upload to locked temp dir with chunked writes, size/MIME/decompression guards, then extract text inside sandboxed worker (`helpers/docs_utils` with `UPLOAD_PARSER_*` caps)
+  → Run malware scan if configured (external ClamAV command warmed on startup to avoid cold scans)
     → Run Content Safety Prompt Shields (helpers/content_safety.py using managed identity)
+      → Apply prompt sanitization (helpers/prompt_sanitizer.py normalizes text, neutralizes directives, escapes template markers, blocks high-risk cues)
     → Initialize models (DefaultAzureCredential + Key Vault)
       → (Admin) Select model & reasoning effort
         → Sequential generation steps (prompts module)
@@ -49,7 +51,7 @@ Adaptive invocation attempts a superset of safe parameters then progressively st
 1. response_format → 2. max_completion_tokens → 3. reasoning_effort (last resort)
 
 ## 5. Caching Strategy
-- Local pickle file keyed by hash(model|language|prompt|temperature|compression)
+- Local pickle file keyed by hash(model|language|prompt|temperature|compression|reasoning_effort for reasoning-capable models)
 - Stores (model, language, input_cost, output_cost, answer)
 - Cache hits skip recomputation; cost shown from original run for transparency
 - Planned evolution: Redis with TTL and optimistic locking for multi-instance scale
@@ -85,8 +87,12 @@ Adaptive invocation attempts a superset of safe parameters then progressively st
 - Key Vault for secret indirection (no raw secrets in repo)
 - Allow‑list gating admin actions (model selection)
 - Azure Content Safety Prompt Shields block unsafe uploads before generation; custom subdomain required for managed identity.
+- Prompt sanitizer runs after Content Safety to normalize uploads, neutralize directive phrases, escape template markers, and block high-risk jailbreak cues before prompt assembly.
 - Sandboxed document parsing constrains pdfminer/docx2txt extraction using env-tunable limits (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`).
+- Upload pipeline streams files to disk in bounded chunks, enforces size / MIME / archive limits, and only passes sanitized temp paths to the sandboxed extractor to mitigate decompression bombs and resource exhaustion.
+- Malware scanner warm-up primes ClamAV on startup so security scans run without cold-start latency.
 - Per-session CSRF tokens enforced across HTMX POST endpoints.
+- Container builds exclude `.env`; runtime secrets/configs flow in via Azure Container Apps environment variables using the sync script, keeping credentials out of images.
 - TODO: Rate limiting (size limits & parser caps enforced via env vars)
 
 ## 11. Extensibility Hooks

@@ -4,7 +4,7 @@
 
 - **High – Untrusted LLM output rendered as HTML:** `analysis_result.html|safe` injects Azure OpenAI responses directly into the DOM. Malicious or poisoned outputs could contain `<script>` or other dangerous markup, leading to stored/ reflected XSS.
 - **High – Toast notifications use `innerHTML`:** `static/js/app.js` inserts toast messages via `innerHTML`. Messages that originate from user-controlled identifiers (e.g., Azure AD display names) could execute script if not sanitized.
-- **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs. Azure Content Safety Prompt Shields now screen uploads, but additional defense-in-depth (guard prompts, allowlisting) remains outstanding.
+- **High – Prompt injection via uploaded content:** Solution descriptions are incorporated directly into prompts. Hostile instructions can manipulate the LLM to leak prompts, reveal secrets, or sabotage outputs. Azure Content Safety Prompt Shields now screen uploads, and a dedicated prompt sanitizer now normalizes text, neutralizes directive phrases, escapes template markers, and blocks high-risk jailbreak cues before prompts are built, providing an additional guard rail.
 - **Medium – Graph access token validation gap:** `/auth/session` only checks that a token can call Microsoft Graph. It does not verify issuer, audience/client ID, or signature, so tokens minted for other apps with delegated scopes could impersonate users.
 - **Low – Upload pipeline residual risks:** `_write_temp_upload` now streams to disk with size caps, extension/MIME allow lists, decompression-bomb detection, macro/PDF active-content linting, and optional ClamAV scans on newly supplied files; remaining work focuses on sandboxing downstream parsers and monitoring long-running conversions.
 - **Low – Document parser attack surface:** Text extraction now runs inside a sandboxed worker with CPU, memory, file descriptor, and wall-clock limits; remaining work focuses on further isolating rare parser escapes in future iterations.
@@ -23,7 +23,7 @@
 6. Pin or self-host htmx with SRI support to prevent CDN supply-chain attacks.
 7. Add session expiry/cleanup and normalize/escape identifiers before writing to blob logs and append-only storage.
 8. Burn trusted hashes/signatures for critical prompt files into environment variables at build time and verify them before backend load, rejecting unexpected modifications.
-9. Introduce prompt-input sanitization and content moderation (e.g., filters, guard prompts, policy checks) to mitigate uploaded prompt injection attempts.
+9. Introduce prompt-input sanitization and content moderation (e.g., filters, guard prompts, policy checks) to mitigate uploaded prompt injection attempts. ✅ Implemented via prompt sanitizer helper that normalizes uploads, neutralizes directives, escapes template markers, and blocks high-risk cues (Sep 2025).
 10. Sandboxed or containerized document parsing with strict CPU/time/memory limits to contain PDF/DOCX parser exploits. ✅ Implemented via resource-limited worker process (Sep 2025).
 11. Implement rate limiting, per-user quotas, or job queueing for analysis/generation to prevent resource exhaustion and cost abuse.
 12. Establish automatic retention policies for generated artifacts (short-lived storage, secure deletion) and audit storage locations for sensitive drafts.
@@ -53,7 +53,7 @@
 |----------|------|------|--------------------|
 | High | Rendering | LLM HTML injected via `analysis_result.html|safe` | ✅ Implemented – bleach-sanitized markdown output |
 | High | Notifications | Toasts rendered with `innerHTML` | ✅ Implemented – escaped backend payloads + text-only rendering |
-| High | Prompt Safety | Prompt injection via uploaded content | Open – add guard prompts/moderation |
+| High | Prompt Safety | Prompt injection via uploaded content | ✅ Mitigated – Prompt Shield plus prompt sanitizer neutralize uploads before prompt assembly |
 | High | Request AuthZ | Cross-site request forgery on HTMX POSTs | ✅ Implemented – per-session tokens validated on every POST |
 | High | Malware Scanning | ClamAV cold start delayed first scan / caused timeouts | ✅ Implemented – startup warm-up primes daemon with dummy scan |
 | Medium | Identity | Microsoft Graph tokens not validated for issuer/audience | ✅ Implemented – token signature, issuer, tenant, and client checks |
