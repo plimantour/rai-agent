@@ -8,6 +8,7 @@
 - MSAL.js + Microsoft Graph (interactive auth flow shared across UIs)
 - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
 - Azure Content Safety Prompt Shields (managed identity auth, custom subdomain endpoint)
+- Azure AI Language (PII detection with chunked scans, allowlists, auto language detection)
 - ClamAV (command-line malware scanner warmed up on FastAPI startup)
 - Azure Identity (DefaultAzureCredential) for keyless auth
 - Azure Key Vault (secret & endpoint retrieval)
@@ -34,6 +35,7 @@ Environment Variables (representative):
 - **Authentication**: `AZURE_TENANT_ID`; `AZURE_APP_REGISTRATION_CLIENT_ID`; `AZURE_REDIRECT_URI`; `MSAL_CLIENT_ID`; `MSAL_TENANT_ID`; `MSAL_REDIRECT_URI`
 - **HTMX dev bypass**: `HTMX_ALLOW_DEV_BYPASS`; `HTMX_DEV_USER_ID`; `HTMX_DEV_USER_NAME`; `HTMX_DEV_USER_UPN`
 - **Content safety**: `AZURE_CONTENT_SAFETY_ENDPOINT`; `AZURE_CONTENT_SAFETY_API_VERSION`; `AZURE_CONTENT_SAFETY_DISABLED`
+- **PII detection**: `AZURE_LANGUAGE_ENDPOINT`; `AZURE_LANGUAGE_API_VERSION`; `AZURE_LANGUAGE_PII_AUTO_DETECT`; `AZURE_LANGUAGE_PII_LANGUAGE`; `AZURE_LANGUAGE_PII_ALLOWLIST`; `AZURE_LANGUAGE_PII_DISABLED`
 - **Uploads & scanning**: `UPLOAD_ALLOWED_EXTENSIONS`; `UPLOAD_ALLOWED_MIME_TYPES`; `UPLOAD_MAX_BYTES`; `UPLOAD_MAX_UNZIPPED_BYTES`; `UPLOAD_MAX_ARCHIVE_ENTRIES`; `UPLOAD_MAX_ARCHIVE_ENTRY_BYTES`; `UPLOAD_ENABLE_MACRO_LINT`; `UPLOAD_ENABLE_PDF_ACTIVE_CONTENT_LINT`; `UPLOAD_MALWARE_SCAN_CMD`; `UPLOAD_MALWARE_SCAN_TIMEOUT`; `UPLOAD_PARSER_TIMEOUT`; `UPLOAD_PARSER_CPU_SECONDS`; `UPLOAD_PARSER_MEMORY_MB`
 - **Temp/cache control**: `UPLOAD_TMP_DIR`; `UPLOAD_CHUNK_SIZE`; `STATIC_ASSET_VERSION`; `BUILD_TIME`
 - **Prompt & reasoning**: `SHOW_REASONING_SUMMARY_DEFAULT`; `USE_PROMPT_COMPRESSION`; `REASONING_MODEL_DEFAULT`
@@ -65,9 +67,9 @@ Potential Enhancements:
 - Surface reasoning vs visible token breakdown (UI & logs)
 - Optional env var (`RAI_MAX_COMPLETION_TOKENS`) to reintroduce a soft output cap if needed
 - Structured usage export (JSONL) for cost analytics & governance
- - Deeper recursive reasoning extraction (structured segments + safe redaction)
- - Automatic retry logic for empty reasoning responses (single bounded attempt)
- - Combine access + system logs into unified on-demand archive with metadata manifest
+- Deeper recursive reasoning extraction (structured segments + safe redaction)
+- Automatic retry logic for empty reasoning responses (single bounded attempt)
+- Combine access + system logs into unified on-demand archive with metadata manifest
 - Implement structured notifications when prompt shield blocks content (admin alerting path)
 - Add automated health check for Content Safety endpoint (managed identity probe + curl payload) to detect custom domain drift
 

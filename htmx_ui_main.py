@@ -28,7 +28,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Set
+from typing import Any, Callable, Dict, List, Optional, Tuple, Set
 
 import markdown
 import bleach
@@ -54,6 +54,13 @@ from helpers.content_safety import (
     PromptShieldResult,
     PromptShieldServiceError,
     ensure_uploaded_text_safe,
+)
+from helpers.pii_sanitizer import (
+    PiiConfigurationError,
+    PiiDetectionError,
+    PiiServiceError,
+    PiiScanResult,
+    scan_text_for_pii,
 )
 from helpers.prompt_sanitizer import sanitize_prompt_input
 from helpers.token_validation import TokenValidationError, validate_graph_access_token
@@ -332,6 +339,17 @@ class GenerationResult:
 
 
 @dataclass
+class ThreatFinding:
+    source: str
+    summary: str
+    severity: str = "error"
+    details: Optional[str] = None
+    items: List[str] = field(default_factory=list)
+    pii_entities: List[Dict[str, Any]] = field(default_factory=list)
+    blocked: bool = False
+
+
+@dataclass
 class SessionState:
     use_cache: bool = True
     use_prompt_compression: bool = False
@@ -352,12 +370,20 @@ class SessionState:
     stored_solution_text: Optional[str] = None
     stored_solution_filename: Optional[str] = None
     stored_solution_validated: bool = False
+    threat_findings: List[ThreatFinding] = field(default_factory=list)
+    threat_blocked: bool = False
     user_info: str = ""
     has_logged_access: bool = False
     cached_user: Optional['UserContext'] = None
     settings_loaded: bool = False
     settings_restored: bool = False
     csrf_token: str = field(default_factory=_generate_csrf_token)
+    pending_pii_source_text: Optional[str] = None
+    pending_pii_entities: List[Dict[str, Any]] = field(default_factory=list)
+    pending_pii_language: Optional[str] = None
+    pending_pii_filename: Optional[str] = None
+    pending_pii_filename_root: Optional[str] = None
+    pending_pii_approved_terms: Set[str] = field(default_factory=set)
 
     @property
     def reasoning_levels(self) -> List[str]:
@@ -436,6 +462,13 @@ def ensure_session(request: Request) -> Tuple[str, SessionState, bool]:
             session.settings_restored = False
         if not getattr(session, "csrf_token", ""):
             session.csrf_token = _generate_csrf_token()
+        if not hasattr(session, "pending_pii_source_text"):
+            session.pending_pii_source_text = None
+            session.pending_pii_entities = []
+            session.pending_pii_language = None
+            session.pending_pii_filename = None
+            session.pending_pii_filename_root = None
+            session.pending_pii_approved_terms = set()
     return session_id, session, created
 
 
@@ -635,6 +668,8 @@ def render_dashboard(request: Request, session: SessionState, user: UserContext,
         "analysis_result": session.analysis_result,
         "generation_result": session.generation_result,
         "messages": messages,
+        "threat_findings": list(session.threat_findings),
+        "threat_blocked": bool(session.threat_blocked),
         "admin_downloads": {
             "system_logs": bool(collect_system_log_files()),
         },
@@ -890,6 +925,94 @@ def _clear_stored_solution(session: SessionState) -> None:
     session.stored_solution_text = None
     session.stored_solution_filename = None
     session.stored_solution_validated = False
+
+
+def _clear_pending_pii(session: SessionState) -> None:
+    session.pending_pii_source_text = None
+    session.pending_pii_entities = []
+    session.pending_pii_language = None
+    session.pending_pii_filename = None
+    session.pending_pii_filename_root = None
+    session.pending_pii_approved_terms.clear()
+
+
+def _reset_threat_report(session: SessionState) -> None:
+    """Clear any existing threat analysis findings for the session."""
+
+    session.threat_findings = []
+    session.threat_blocked = False
+    _clear_pending_pii(session)
+
+
+def _recalculate_threat_blocked(session: SessionState) -> None:
+    session.threat_blocked = any(getattr(finding, "blocked", False) for finding in session.threat_findings)
+
+
+def _record_threat_event(
+    session: SessionState,
+    *,
+    source: str,
+    summary: str,
+    severity: str = "error",
+    details: Optional[str] = None,
+    items: Optional[List[str]] = None,
+    blocked: bool = False,
+    pii_entities: Optional[List[Dict[str, Any]]] = None,
+) -> ThreatFinding:
+    """Append a threat analysis entry and update the blocked flag when needed."""
+
+    finding = ThreatFinding(
+        source=source,
+        summary=summary,
+        severity=severity,
+        details=details,
+        items=list(items or []),
+        pii_entities=list(pii_entities or []),
+        blocked=blocked,
+    )
+    session.threat_findings.append(finding)
+    if blocked:
+        session.threat_blocked = True
+    return finding
+
+
+def _find_threat_event(session: SessionState, source: str) -> Optional[ThreatFinding]:
+    for finding in reversed(session.threat_findings):
+        if finding.source == source:
+            return finding
+    return None
+
+
+def _prepare_pii_entities_for_ui(pii_result: PiiScanResult) -> List[Dict[str, Any]]:
+    payload: List[Dict[str, Any]] = []
+    occurrence_map: Dict[Tuple[str, bool], int] = {}
+    for entity in pii_result.entities:
+        key = entity.canonical_key()
+        occurrence_map[key] = occurrence_map.get(key, 0) + 1
+
+    for idx, entity in enumerate(pii_result.unique_entities(), start=1):
+        raw_value = entity.raw_text if entity.raw_text is not None else entity.display_text or ""
+        display_text = (entity.display_text or raw_value or "").strip() or raw_value
+        raw_text = raw_value
+        if not raw_text:
+            raw_text = display_text
+        if not raw_text:
+            continue
+        key = entity.canonical_key()
+        occurrences = occurrence_map.get(key, 1)
+        payload.append(
+            {
+                "id": f"pii-{idx}",
+                "detected_text": display_text,
+                "raw_text": raw_text or display_text,
+                "description": entity.description,
+                "category": entity.category,
+                "subcategory": entity.subcategory,
+                "confidence": entity.confidence_percent,
+                "occurrences": occurrences,
+            }
+        )
+    return payload
 
 
 def _stored_solution_root(session: SessionState) -> str:
@@ -1417,27 +1540,76 @@ def _extract_text_from_upload(upload: UploadFile) -> Tuple[str, str]:
 
 
 async def _ingest_new_solution_upload(session: SessionState, upload: UploadFile) -> Optional[Tuple[str, str, str]]:
+    _reset_threat_report(session)
     session.messages.append("Scanning uploaded document for threats. Please wait...")
     filename_root, text = _extract_text_from_upload(upload)
     display_name = upload.filename or f"{filename_root}.docx"
     session.messages.append("Malware scan complete. Running responsible AI scan on the content...")
+    _record_threat_event(
+        session,
+        source="Malware Scan",
+        summary="Malware scan cleared the uploaded file.",
+        severity="info",
+    )
     if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
         session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
+        _record_threat_event(
+            session,
+            source="Azure Content Safety",
+            summary="Azure Content Safety rejected the document.",
+            severity="error",
+            blocked=True,
+        )
         return None
+    _record_threat_event(
+        session,
+        source="Azure Content Safety",
+        summary="Azure Content Safety scan cleared the document.",
+        severity="info",
+    )
     session.messages.append("Responsible AI scan complete. Applying prompt sanitizer safeguards to the document...")
     sanitizer_result = sanitize_prompt_input(text)
+    sanitizer_items = [finding.message for finding in sanitizer_result.findings]
     if sanitizer_result.blocked:
         session.messages.append("Scan blocked: prompt sanitizer detected hostile instructions.")
         log.warning("Prompt sanitizer blocked upload '%s'", display_name)
+        _record_threat_event(
+            session,
+            source="Prompt Sanitizer",
+            summary="Prompt sanitizer blocked hostile instructions in the upload.",
+            severity="error",
+            items=sanitizer_items,
+            blocked=True,
+        )
         return None
     text = sanitizer_result.text
     sanitized_directives = [finding for finding in sanitizer_result.findings if finding.replacement]
     if sanitized_directives:
         session.messages.append("Prompt sanitizer adjusted the document to neutralize risky directives.")
+        _record_threat_event(
+            session,
+            source="Prompt Sanitizer",
+            summary="Prompt sanitizer neutralized risky directives before storage.",
+            severity="warning",
+            items=sanitizer_items,
+        )
     elif sanitizer_result.findings:
         session.messages.append("Prompt sanitizer normalized the document and found no risky directives.")
+        _record_threat_event(
+            session,
+            source="Prompt Sanitizer",
+            summary="Prompt sanitizer normalized the document and flagged benign findings.",
+            severity="info",
+            items=sanitizer_items,
+        )
     else:
         session.messages.append("Prompt sanitizer completed with no risky directives detected.")
+        _record_threat_event(
+            session,
+            source="Prompt Sanitizer",
+            summary="Prompt sanitizer reported no risky directives.",
+            severity="info",
+        )
     if sanitizer_result.findings:
         log.info(
             "Prompt sanitizer recorded %s findings for upload '%s'",
@@ -1451,8 +1623,70 @@ async def _ingest_new_solution_upload(session: SessionState, upload: UploadFile)
                 finding.original,
                 finding.replacement,
             )
+    session.messages.append("Running PII detection scan on the content...")
+    try:
+        pii_result = scan_text_for_pii(text, label=display_name)
+    except PiiConfigurationError as exc:
+        log.error("PII detection misconfiguration: %s", exc)
+        session.messages.append("Scan blocked: Azure AI Language PII detection is not configured correctly.")
+        _record_threat_event(
+            session,
+            source="PII Detection",
+            summary="PII detection misconfiguration prevented the scan.",
+            severity="error",
+            details=str(exc),
+            blocked=True,
+        )
+        return None
+    except (PiiServiceError, PiiDetectionError) as exc:
+        log.error("PII detection service failed: %s", exc)
+        session.messages.append("Scan blocked: Azure AI Language PII detection service is unavailable. Try again later.")
+        _record_threat_event(
+            session,
+            source="PII Detection",
+            summary="PII detection service failed during the scan.",
+            severity="error",
+            details=str(exc),
+            blocked=True,
+        )
+        return None
+    if pii_result.has_pii:
+        pii_entities_payload = _prepare_pii_entities_for_ui(pii_result)
+        summary_items = pii_result.summary_items()
+        session.pending_pii_source_text = text
+        session.pending_pii_entities = pii_entities_payload
+        session.pending_pii_language = pii_result.language
+        session.pending_pii_filename = display_name
+        session.pending_pii_filename_root = filename_root
+        session.pending_pii_approved_terms.clear()
+        session.messages.append("Scan blocked: PII detected in the document.")
+        session.messages.append("Review the detected entries below, update or anonymize them, then click Proceed with upload.")
+        _record_threat_event(
+            session,
+            source="PII Detection",
+            summary="PII detected in the uploaded document.",
+            severity="error",
+            items=summary_items,
+            blocked=True,
+            details=f"Detected language: {pii_result.language}",
+            pii_entities=pii_entities_payload,
+        )
+        log.warning(
+            "PII detection blocked upload '%s' with %s entities", display_name, len(pii_result.entities)
+        )
+        return None
+    text = pii_result.redacted_text or text
+    session.messages.append("PII detection scan complete. No sensitive information detected.")
+    _record_threat_event(
+        session,
+        source="PII Detection",
+        summary="PII detection scan cleared the document.",
+        severity="info",
+        details=f"Detected language: {pii_result.language}",
+    )
     session.messages.append("Security checks complete. Stored sanitized document.")
     _set_stored_solution(session, display_name, text, validated=True)
+    _clear_pending_pii(session)
     return filename_root, text, display_name
 
 
@@ -1496,6 +1730,152 @@ async def upload_solution_description(request: Request, file: UploadFile = File(
         append_log_to_blob(f"{session.user_info or user.display_name} : Uploaded solution description - {display_name}")
     except Exception:
         pass
+    response = render_dashboard(request, session, user, partial=True)
+    if created:
+        response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+    return response
+
+
+@app.post("/upload/pii-remediate", response_class=HTMLResponse)
+async def remediate_pii_findings(request: Request):
+    session_id, session, created, user = await get_session_and_user(request)
+    if not user.authorized:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    await enforce_csrf(request, session)
+    if not session.pending_pii_source_text:
+        session.messages.append("No pending PII remediation request found. Upload a document to begin.")
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
+
+    form = await request.form()
+    replacements: Dict[str, str] = {}
+    kept_terms_set: Set[str] = set()
+    pending_entities = list(session.pending_pii_entities)
+
+    for entity in pending_entities:
+        entity_id = str(entity.get("id") or "")
+        raw_text = str(entity.get("raw_text") or "")
+        if not entity_id or not raw_text:
+            continue
+        replacement_value = form.get(f"pii_replacement__{entity_id}")
+        replacement_text = str(replacement_value) if replacement_value is not None else raw_text
+        if replacement_text != raw_text:
+            replacements[raw_text] = replacement_text
+        else:
+            kept_terms_set.add(raw_text)
+
+    updated_text = session.pending_pii_source_text
+    for original in sorted(replacements.keys(), key=len, reverse=True):
+        replacement = replacements[original]
+        updated_text = updated_text.replace(original, replacement)
+
+    display_name = session.pending_pii_filename or "Uploaded document"
+    filename_root = session.pending_pii_filename_root or "solution_description"
+
+    if kept_terms_set:
+        session.pending_pii_approved_terms.update(kept_terms_set)
+    additional_allowlist = None
+    if session.pending_pii_approved_terms:
+        additional_allowlist = list(session.pending_pii_approved_terms)
+
+    try:
+        pii_result = scan_text_for_pii(updated_text, label=display_name, additional_allowlist=additional_allowlist)
+    except PiiConfigurationError as exc:
+        log.error("PII remediation failed due to configuration error: %s", exc)
+        session.messages.append("Scan blocked: Azure AI Language PII detection is not configured correctly.")
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
+    except (PiiServiceError, PiiDetectionError) as exc:
+        log.error("PII remediation failed when calling the service: %s", exc)
+        session.messages.append("Scan blocked: Azure AI Language PII detection service is unavailable. Try again later.")
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
+
+    pii_finding = _find_threat_event(session, "PII Detection")
+
+    if pii_result.has_pii:
+        pii_entities_payload = _prepare_pii_entities_for_ui(pii_result)
+
+        session.pending_pii_source_text = updated_text
+        session.pending_pii_entities = pii_entities_payload
+        session.pending_pii_language = pii_result.language
+        session.messages.append("PII detection still found sensitive information. Update or anonymize the remaining entries before proceeding.")
+        if session.pending_pii_approved_terms:
+            session.messages.append("Previously accepted false positives remain approved for this upload.")
+
+        summary_items = pii_result.summary_items()
+        if pii_finding is None:
+            _record_threat_event(
+                session,
+                source="PII Detection",
+                summary="PII detected in the uploaded document.",
+                severity="error",
+                items=summary_items,
+                blocked=True,
+                details=f"Detected language: {pii_result.language}",
+                pii_entities=pii_entities_payload,
+            )
+        else:
+            pii_finding.summary = "PII detected in the uploaded document."
+            pii_finding.severity = "error"
+            pii_finding.details = f"Detected language: {pii_result.language}"
+            pii_finding.items = summary_items
+            pii_finding.pii_entities = pii_entities_payload
+            pii_finding.blocked = True
+        _recalculate_threat_blocked(session)
+        response = render_dashboard(request, session, user, partial=True)
+        if created:
+            response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")
+        return response
+
+    final_text = pii_result.redacted_text or updated_text
+    _set_stored_solution(session, display_name, final_text, validated=True)
+    approved_terms_snapshot = sorted({term.strip() or term for term in session.pending_pii_approved_terms})
+    if approved_terms_snapshot:
+        preview_terms = ", ".join(approved_terms_snapshot[:5])
+        if len(approved_terms_snapshot) > 5:
+            preview_terms += ", …"
+        session.messages.append(f"Accepted false-positive PII terms: {preview_terms}.")
+    session.messages.append("PII detection scan complete. No sensitive information detected.")
+    session.messages.append("Security checks complete. Stored sanitized document.")
+    session.messages.append(f"Stored '{display_name}' for reuse.")
+
+    if pii_finding is None:
+        details_note = f"Detected language: {pii_result.language}"
+        if approved_terms_snapshot:
+            details_note += "; user accepted false positives"
+        _record_threat_event(
+            session,
+            source="PII Detection",
+            summary="PII detection scan cleared the document after remediation.",
+            severity="info",
+            details=details_note,
+        )
+    else:
+        pii_finding.summary = "PII detection scan cleared the document after remediation."
+        pii_finding.severity = "info"
+        details_note = f"Detected language: {pii_result.language}"
+        if approved_terms_snapshot:
+            details_note += "; user accepted false positives"
+        pii_finding.details = details_note
+        pii_finding.items = []
+        pii_finding.pii_entities = []
+        pii_finding.blocked = False
+
+    _clear_pending_pii(session)
+    _recalculate_threat_blocked(session)
+
+    try:
+        append_log_to_blob(f"{session.user_info or user.display_name} : Uploaded solution description - {display_name}")
+    except Exception:
+        pass
+
     response = render_dashboard(request, session, user, partial=True)
     if created:
         response.set_cookie("rai_session", session_id, httponly=True, secure=_cookie_secure(), samesite="lax")

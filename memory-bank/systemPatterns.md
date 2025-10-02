@@ -5,12 +5,12 @@
 High-Level Layers:
 1. Ingestion Layer: CLI (`main.py`), Streamlit UI (`streamlit_ui_main.py`), and HTMX/FastAPI UI (`htmx_ui_main.py`)
 2. Orchestration & Prompt Pipeline: `prompts/prompts_engineering_llmlingua.py`
-3. Processing Utilities: document mutation (`helpers/docs_utils.py`), caching (`helpers/cache_completions.py`), pricing (`helpers/completion_pricing.py`), auth/session (`helpers/user_auth.py`), blob/keyvault integration (`helpers/blob_cache.py`)
+3. Processing Utilities: document mutation (`helpers/docs_utils.py`), caching (`helpers/cache_completions.py`), pricing (`helpers/completion_pricing.py`), auth/session (`helpers/user_auth.py`), blob/keyvault integration (`helpers/blob_cache.py`), PII detection (`helpers/pii_sanitizer.py`)
 4. Persistence / External Services: Azure OpenAI / Mistral (LLM), Azure Key Vault (secrets + config, allow/admin rosters), Azure Blob (logs & allow‑list), Local FS (cache, outputs)
 5. Presentation: Streamlit reactive components (progress, download, parameter toggles) plus HTMX partials with polling-driven progress feed, toast queue, and shared static assets
 
 Data Flow (UI path):
-Upload DOCX → Extract raw text inside sandboxed worker (resource caps via `UPLOAD_PARSER_*`) → Run Azure Content Safety Prompt Shields (helpers/content_safety.py; managed identity, retry/cache) → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
+Upload DOCX → Extract raw text inside sandboxed worker (resource caps via `UPLOAD_PARSER_*`) → Run Azure Content Safety Prompt Shields (helpers/content_safety.py; managed identity, retry/cache) → Invoke Azure AI Language PII scan (helpers/pii_sanitizer.py) with chunking, auto language detection, and allowlist support → Present deduplicated remediation queue where users anonymize spans or approve false positives (session-level allowlist) → Initialize models (credential + endpoints) → (Admin selects model & reasoning effort if authorized) → Multi-step LLM calls (adaptive params, JSON or text) → Accumulate token replacement map → Apply replacements & prune template → Save DOCX variants → Offer ZIP/individual downloads → Stream progress via Streamlit callbacks or HTMX `/progress` poller (step list + toasts) → Log user actions & usage.
 
 ## Key Technical Decisions
 
@@ -21,6 +21,7 @@ Upload DOCX → Extract raw text inside sandboxed worker (resource caps via `UPL
 - Allow and admin rosters centralized in Key Vault secrets so access can be rotated without code changes.
 - Azure Content Safety Prompt Shields enforce pre-ingestion scanning using managed identity-authenticated REST calls; helper caches verdicts to reduce duplicate scans and surfaces developer-friendly diagnostics.
 - HTMX upload ingestion helper persists a `stored_solution_validated` flag in session state so downstream analysis/generation paths trust previously scanned text, eliminating duplicate ClamAV or Content Safety invocations while still forcing revalidation when a new file arrives.
+- Remediation route stores user-approved PII terms in a per-session allowlist, feeds the additional allowlist into subsequent Azure AI Language scans, and deduplicates entities by canonical key so recap cards display unique findings with occurrence counts.
 - Self-hosted htmx asset upgraded to 2.0.7 with client defaults forcing smooth scroll + native form validity prompts so 2.x behavioral changes do not regress UX.
 - Prompt sanitizer helper (`sanitize_prompt_input`) runs after Content Safety to normalize user uploads, neutralize jailbreak directives, escape template markers, and optionally block high-risk patterns before prompts are built, giving future user inputs a reusable defense layer.
 - Optional llmlingua compression controlled per-run to manage risk of semantic loss.

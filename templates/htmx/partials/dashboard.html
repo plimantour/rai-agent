@@ -9,6 +9,67 @@
         <p class="muted small">Adjust feature preferences and admin controls from the Settings modal in the header.</p>
     </section>
 
+    {% if threat_findings %}
+    <section class="panel threat-panel{% if threat_blocked %} is-blocked{% endif %}">
+        <div class="threat-header">
+            <h3>Threat Analysis</h3>
+            {% if threat_blocked %}
+            <span class="status-badge status-critical" role="status">Upload blocked</span>
+            {% else %}
+            <span class="status-badge status-clear" role="status">Cleared</span>
+            {% endif %}
+        </div>
+        <p class="muted small">Latest security checks on the uploaded document.</p>
+        <ul class="threat-list">
+            {% for finding in threat_findings %}
+            <li class="threat-item threat-{{ finding.severity | default('info') }}">
+                <div class="threat-summary">{{ finding.summary }}</div>
+                <p class="threat-source">Source: {{ finding.source }}</p>
+                {% if finding.items %}
+                <ul class="threat-detail-list">
+                    {% for item in finding.items %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% if finding.pii_entities %}
+                <form class="pii-remediation-form" hx-post="/upload/pii-remediate" hx-target="#main-content" hx-swap="outerHTML">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="pii-remediation-list">
+                        {% for entity in finding.pii_entities %}
+                        <div class="pii-remediation-item">
+                            <div class="pii-remediation-label">
+                                <span class="pii-detected-text">Detected '{{ entity.detected_text | e }}'</span>
+                                <span class="pii-detected-meta">
+                                    {{ entity.description }}
+                                    {% if entity.occurrences and entity.occurrences > 1 %}
+                                    · {{ entity.occurrences }} occurrences
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <div class="pii-remediation-controls">
+                                <input type="hidden" name="pii_original__{{ entity.id }}" value="{{ entity.raw_text | e }}">
+                                <label class="sr-only" for="pii-input-{{ entity.id }}">Replacement for {{ entity.detected_text | e }}</label>
+                                <input type="text" id="pii-input-{{ entity.id }}" name="pii_replacement__{{ entity.id }}" value="{{ entity.raw_text | e }}" data-original="{{ entity.raw_text | e }}">
+                                <button type="button" class="button tertiary small" data-pii-anonymize data-target="#pii-input-{{ entity.id }}" data-anonymize-value="{{ entity.category | e }}">Anonymize</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="pii-remediation-actions">
+                        <button type="submit" class="button primary">Proceed with upload</button>
+                    </div>
+                </form>
+                {% endif %}
+                {% if finding.details %}
+                <p class="threat-details">{{ finding.details }}</p>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
     <section class="panel">
         <h3>Solution description</h3>
         <form id="solution-form" class="stack" data-has-upload="{{ 'true' if session.stored_solution_text else 'false' }}" data-has-stored="{{ 'true' if session.stored_solution_text else 'false' }}">

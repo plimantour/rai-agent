@@ -12,17 +12,16 @@ Organizations building custom AI solutions must complete a Responsible AI (RAI) 
 - Provides cost transparency (token usage & estimated € pricing)
 - Offers deterministic templating over official DOCX formats without format loss
 - Enables reuse of intermediate reasoning via caching (cost savings)
+- Flags potential PII in uploads with Azure AI Language, guiding reviewers through a deduplicated remediation panel so they can anonymize or approve suspected findings before generation continues
 
 ## How It Should Work
 
 1. User supplies a `solution_description.docx` (CLI) or uploads via Streamlit or HTMX UI.
 2. System initializes Azure credentials + model deployment metadata from Key Vault (keyless if possible).
-3. Multi-step LLM pipeline runs in dependency order:
+3. Azure AI Language PII scan runs during ingestion, presenting a deduplicated remediation queue where reviewers can anonymize text or approve false positives; accepted terms feed a per-session allowlist before generation proceeds.
+4. Multi-step LLM pipeline runs in dependency order:
 	- Intended Uses → Stakeholders → Goals (A5/T3, Fairness) → Scope → Solution Info → Assessments → Risks → Impact → Harms → Disclosure
-4. Each step requests structured JSON; processors map JSON into (search_token → replacement) pairs.
-5. Accumulated replacements applied to two DOCX templates (internal & public) with conditional pruning of unused Intended Use pages.
-6. Progress + cost updates streamed to UI (or printed in CLI).
-7. Outputs downloadable (or left in target folder) and temporary artifacts optionally deleted.
+5. Each step requests structured JSON; processors map JSON into (search_token → replacement) pairs.
 
 Success Criteria:
 - < 15 min typical full generation latency

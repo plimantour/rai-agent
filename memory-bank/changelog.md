@@ -1,6 +1,17 @@
 
 # Changelog
 
+## 2025-09-30
+### Added
+- Azure AI Language powered PII detection integrated into the upload pipeline with chunked scans, automatic language detection, configurable domains/categories, and global allowlist support.
+- HTMX remediation UI now presents a deduplicated list of PII findings with confidence, category, and occurrence counts, plus inline anonymization controls and per-session approval tracking.
+
+### Changed
+- Proceeding after remediation now respects reviewer-approved terms by feeding them into a session-scoped allowlist so subsequent scans skip intentional false positives without suppressing fresh findings.
+
+### Fixed
+- Repeated PII detections no longer surface duplicate cards; canonical keying collapses equivalent entities while preserving the highest confidence preview.
+
 ## 2025-09-29
 ### Added
 - Sandboxed PDF/DOCX parsing runs in a resource-limited worker process with env-tunable caps (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`) and unified error handling across HTMX + CLI flows.

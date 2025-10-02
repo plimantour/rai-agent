@@ -12,6 +12,7 @@ Core Differentiators:
 - Admin-selectable model & reasoning effort (cost / capability flexibility)
 - Adaptive reasoning parameter handling (progressive fallback)
 - Cost accounting includes hidden reasoning tokens for transparency
+- Azure AI Language powered PII screening with deduplicated remediation UI so reviewers can anonymize or approve findings before generation continues
 
 Primary Stakeholders: AI solution architects, compliance / RAI reviewers, engineering teams preparing assessment packages.
 

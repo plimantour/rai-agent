@@ -30,6 +30,11 @@ cp .env.template .env
 | `AZURE_CONTENT_SAFETY_ENDPOINT` | Content Safety resource endpoint | Required; use the custom subdomain (`https://<resource>.cognitiveservices.azure.com`) so managed identities succeed |
 | `AZURE_CONTENT_SAFETY_API_VERSION` | Content Safety API version (`2024-09-01`) | Required |
 | `AZURE_CONTENT_SAFETY_DISABLED` | Set to `1` only to bypass Prompt Shields during local testing | Leave unset or `0` in production |
+| `AZURE_LANGUAGE_ENDPOINT` | Azure AI Language resource endpoint for PII detection | Required unless `AZURE_LANGUAGE_PII_DISABLED=1` |
+| `AZURE_LANGUAGE_API_VERSION` | AI Language API version (`2023-04-01`) | Optional override |
+| `AZURE_LANGUAGE_PII_AUTO_DETECT` | Enable automatic language detection for PII scans | Defaults to `true` |
+| `AZURE_LANGUAGE_PII_LANGUAGE` | Force a specific language code (e.g. `en`) | Leave blank to auto-detect |
+| `AZURE_LANGUAGE_PII_ALLOWLIST` | Comma-separated global PII allowlist terms | Optional |
 | `SHOW_REASONING_SUMMARY_DEFAULT` et al. | UI feature flags for reasoning summaries | Optional |
 | `HTMX_FALLBACK_ALLOW_LIST` / `HTMX_FALLBACK_ADMIN_LIST` | Comma/semicolon separated allow/admin list fallback values | Optional for local development |
 | `HTMX_ALLOW_DEV_BYPASS` and related `HTMX_DEV_*` | Opt-in local auth bypass | Never enable in shared environments |
@@ -193,6 +198,12 @@ curl -sS \
 ```
 
 Expect `attackDetected: false` for benign content. Substitute `documents` with any strings you need to vet; omit the array entirely if you only want to scan the user prompt. Re-run the container or redeploy after updating `helpers/content_safety.py` or environment variables so the managed identity picks up changes.
+
+## 🔒 PII Detection & Remediation Workflow
+- Azure AI Language scans every uploaded document before analysis, chunking large files and auto-detecting language (configurable via `AZURE_LANGUAGE_PII_*`).
+- Findings render in the HTMX remediation panel as a deduplicated list with confidence, category, and occurrence counts so reviewers focus on unique threats.
+- Users can anonymize spans in-place or approve specific terms as false positives; approved terms feed a per-session allowlist so subsequent scans treat them as safe without re-flagging.
+- Proceeding with only approved findings clears the threat gate, preserving user decisions while ensuring new uploads always re-run detection.
 
 ## 📦 Caching & Reproducibility
 Local pickle cache (key = hash(model|language|prompt|temperature|compression)).

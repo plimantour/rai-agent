@@ -17,7 +17,8 @@ User Uploads DOCX
   → Stream upload to locked temp dir with chunked writes, size/MIME/decompression guards, then extract text inside sandboxed worker (`helpers/docs_utils` with `UPLOAD_PARSER_*` caps)
   → Run malware scan if configured (external ClamAV command warmed on startup to avoid cold scans)
     → Run Content Safety Prompt Shields (helpers/content_safety.py using managed identity)
-      → Apply prompt sanitization (helpers/prompt_sanitizer.py normalizes text, neutralizes directives, escapes template markers, blocks high-risk cues)
+        → Apply prompt sanitization (helpers/prompt_sanitizer.py normalizes text, neutralizes directives, escapes template markers, blocks high-risk cues)
+          → Invoke Azure AI Language PII detection (helpers/pii_sanitizer.py) with chunking, automatic language detection, and global/ session allowlists, then surface a deduplicated remediation list (occurrence counts + inline anonymization/approval)
     → Initialize models (DefaultAzureCredential + Key Vault)
       → (Admin) Select model & reasoning effort
         → Sequential generation steps (prompts module)
@@ -88,6 +89,7 @@ Adaptive invocation attempts a superset of safe parameters then progressively st
 - Allow‑list gating admin actions (model selection)
 - Azure Content Safety Prompt Shields block unsafe uploads before generation; custom subdomain required for managed identity.
 - Prompt sanitizer runs after Content Safety to normalize uploads, neutralize directive phrases, escape template markers, and block high-risk jailbreak cues before prompt assembly.
+- Azure AI Language PII detection scans sanitized text in configurable chunks, deduplicates findings, tracks occurrence counts, and accepts user-approved false positives in a session-scoped allowlist so subsequent scans honor reviewer decisions without suppressing new entities.
 - Sandboxed document parsing constrains pdfminer/docx2txt extraction using env-tunable limits (`UPLOAD_PARSER_TIMEOUT`, `UPLOAD_PARSER_CPU_SECONDS`, `UPLOAD_PARSER_MEMORY_MB`).
 - Upload pipeline streams files to disk in bounded chunks, enforces size / MIME / archive limits, and only passes sanitized temp paths to the sandboxed extractor to mitigate decompression bombs and resource exhaustion.
 - Malware scanner warm-up primes ClamAV on startup so security scans run without cold-start latency.

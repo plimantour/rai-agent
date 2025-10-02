@@ -36,6 +36,11 @@ AZURE_CONTENT_SAFETY_RESOURCE=${AZURE_CONTENT_SAFETY_RESOURCE:-cto-contentsafety
 AZURE_CONTENT_SAFETY_RESOURCE_GROUP=${AZURE_CONTENT_SAFETY_RESOURCE_GROUP:-$AZURE_OPENAI_RESOURCE_GROUP}
 CONTENT_SAFETY_LOCATION=${CONTENT_SAFETY_LOCATION:-$LOCATION}
 CONTENT_SAFETY_SKU=${CONTENT_SAFETY_SKU:-S0}
+AZURE_LANGUAGE_RESOURCE=${AZURE_LANGUAGE_RESOURCE:-cto-language-swedencentral}
+AZURE_LANGUAGE_RESOURCE_GROUP=${AZURE_LANGUAGE_RESOURCE_GROUP:-$AZURE_OPENAI_RESOURCE_GROUP}
+LANGUAGE_LOCATION=${LANGUAGE_LOCATION:-$LOCATION}
+LANGUAGE_SKU=${LANGUAGE_SKU:-S0}
+LANGUAGE_KIND=${LANGUAGE_KIND:-CognitiveServices}
 
 log_section() {
     printf '\n=== %s ===\n' "$1"
@@ -200,6 +205,44 @@ ensure_content_safety_custom_domain() {
     fi
 }
 
+ensure_language_account() {
+    if az cognitiveservices account show \
+        --name "$AZURE_LANGUAGE_RESOURCE" \
+        --resource-group "$AZURE_LANGUAGE_RESOURCE_GROUP" >/dev/null 2>&1; then
+        echo "Azure AI Language account $AZURE_LANGUAGE_RESOURCE already exists."
+    else
+        echo "Creating Azure AI Language account $AZURE_LANGUAGE_RESOURCE..."
+        az cognitiveservices account create \
+            --name "$AZURE_LANGUAGE_RESOURCE" \
+            --resource-group "$AZURE_LANGUAGE_RESOURCE_GROUP" \
+            --kind "$LANGUAGE_KIND" \
+            --sku "$LANGUAGE_SKU" \
+            --location "$LANGUAGE_LOCATION" \
+            --yes \
+            --tags project=rai-assessment >/dev/null
+        echo "Azure AI Language account $AZURE_LANGUAGE_RESOURCE created."
+    fi
+}
+
+ensure_language_custom_domain() {
+    local expected_domain current_domain
+    expected_domain="$AZURE_LANGUAGE_RESOURCE"
+    current_domain=$(az cognitiveservices account show \
+        --name "$AZURE_LANGUAGE_RESOURCE" \
+        --resource-group "$AZURE_LANGUAGE_RESOURCE_GROUP" \
+        --query "properties.customSubDomainName" \
+        --output tsv 2>/dev/null || true)
+    if [ "$current_domain" = "$expected_domain" ]; then
+        echo "Language custom domain $expected_domain already configured."
+    else
+        echo "Configuring Language custom domain $expected_domain..."
+        az cognitiveservices account update \
+            --name "$AZURE_LANGUAGE_RESOURCE" \
+            --resource-group "$AZURE_LANGUAGE_RESOURCE_GROUP" \
+            --custom-domain "$expected_domain" >/dev/null
+    fi
+}
+
 log_section "Resource group"
 ensure_resource_group
 
@@ -209,6 +252,10 @@ ensure_log_analytics_workspace
 log_section "Azure Content Safety account"
 ensure_content_safety_account
 ensure_content_safety_custom_domain
+
+log_section "Azure AI Language account"
+ensure_language_account
+ensure_language_custom_domain
 
 log_section "Container Apps environment"
 ensure_container_environment
@@ -246,6 +293,12 @@ CONTENT_SAFETY_SCOPE=$(az cognitiveservices account show \
     --resource-group "$AZURE_CONTENT_SAFETY_RESOURCE_GROUP" \
     --query id --output tsv)
 ensure_role_assignment "Cognitive Services User" "$CONTENT_SAFETY_SCOPE"
+
+LANGUAGE_SCOPE=$(az cognitiveservices account show \
+    --name "$AZURE_LANGUAGE_RESOURCE" \
+    --resource-group "$AZURE_LANGUAGE_RESOURCE_GROUP" \
+    --query id --output tsv)
+ensure_role_assignment "Cognitive Services Language Reader" "$LANGUAGE_SCOPE"
 
 KEYVAULT_SCOPE=$(az keyvault show \
     --name "$KEYVAULT_NAME" \
