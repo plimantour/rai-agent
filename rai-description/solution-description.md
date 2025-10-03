@@ -7,21 +7,20 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Goal**: accelerate creation of Microsoft Responsible AI (RAI) Impact Assessment drafts by guiding trained assessment owners through a multi-step, model-assisted workflow. The Copilot produces both Microsoft-internal and public-facing DOCX outputs that follow the official RAI template.
 - **Primary users**: Microsoft RAI champions and solution owners who have completed the mandated RAI training. Access is limited to this population through Entra ID authentication and a Key Vault–backed allow-list.
 - **User flows**:
-       - **Streamlit UI (`streamlit_ui_main.py`)** – interactive experience for uploading a solution description, running an AI-assisted pre-flight analysis, generating draft assessments, and downloading outputs or log bundles.
        - **HTMX/FastAPI UI (`htmx_ui_main.py`)** – web application with CSRF protection, live progress polling, toast notifications, and a remediation dashboard that gates uploads on malware scans, Azure Content Safety verdicts, prompt sanitization, and Azure AI Language PII findings before allowing generation.
        - **CLI (`main.py`)** – headless generation path for scripted scenarios.
 - **Pipeline orchestration**: `prompts/prompts_engineering_llmlingua.py` executes a deterministic 12-step prompt pipeline (Intended Uses → Disclosure of AI Interaction). Each step transforms the template via typed JSON results, with fallbacks to text when needed.
 - **Key integrations**: Azure OpenAI (Responses API via the official `AzureOpenAI` client), Azure Content Safety Prompt Shields, Azure AI Language (PII entity detection), Azure Key Vault (secrets, user/administrator allow-lists), Azure Blob Storage (access logs and admin downloads), optional llmlingua prompt compression, ClamAV malware scanning, and local filesystem outputs (`rai-assessment-output/`).
 - **Deployment targets**: designed for Azure Container Apps with Managed Identity; supports local execution (Mac/Linux/WSL2) for development and air-gapped testing when Key Vault access is extended through the network security perimeter.
-- **Inclusive UX**: HTMX and Streamlit surfaces provide keyboard navigation, screen-reader labels, live toast feedback, and user-selectable dark/light themes so reviewers with diverse accessibility needs can work comfortably while managing PII remediation tasks.
+- **Inclusive UX**: HTMX surface provide keyboard navigation, screen-reader labels, live toast feedback, and user-selectable dark/light themes so reviewers with diverse accessibility needs can work comfortably while managing PII remediation tasks.
 
 ## 2. Security Controls
 
 ### 2.1 Identity and Access Management
 
-- **Interactive sign-in**: MSAL custom Streamlit component enforces Entra ID authentication. The login surface clearly links to the hosting Azure Container App URL.
+- **Interactive sign-in**: MSAL enforces Entra ID authentication.
 - **Authorization**: a Key Vault secret (`RAI-ASSESSMENT-USERS`) contains the approved user allow-list. Users outside the list are denied access to generation features.
-- **Admin privileges**: elevated actions (model selection, reasoning verbosity, log level changes, cache clearing) are only available to named administrators validated against the allow-list.
+- **Admin privileges**: elevated actions (model selection, reasoning verbosity, log level changes, cache clearing) are only available to named administrators validated against the allow-list, retrieved from the same Key Vault.
 - **Session integrity**: HTMX routes require a per-session CSRF token injected into forms and headers; POST requests missing or mismatching the token are rejected, limiting CSRF exploitation.
 
 ### 2.2 Secrets and Key Management
@@ -130,7 +129,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 | Data & Privacy | Minimal data retention, cache toggle, Key Vault secrets, optional private endpoint enforcement. | Automated cache expiry, formal data retention schedule, encryption-at-rest roadmap for caches/logs. |
 | Security | Managed Identity for secrets, NSP-ready deployment, rotating logs, download-once deletion. | Add rate limiting, vulnerability scanning, incident response playbook. |
 | Transparency | UI warnings, downloadable logs, cost reporting, optional reasoning summary. | Provide user-facing changelog of model/config updates and link to evaluation artifacts. |
-| User Experience & Accessibility | HTMX and Streamlit experiences support keyboard navigation, screen-reader labels, toast feedback, and a dark/light theme toggle; PII remediation includes single-click deanonymize controls. | Formal accessibility audit, ARIA live regions, and larger text/reduced motion settings remain on the backlog. |
+| User Experience & Accessibility | HTMX experience support keyboard navigation, screen-reader labels, toast feedback, and a dark/light theme toggle; PII remediation includes single-click deanonymize controls. | Formal accessibility audit, ARIA live regions, and larger text/reduced motion settings remain on the backlog. |
 | Continuous Improvement | Memory bank tracks roadmap; backlog includes schema validation, structured telemetry, Redis cache, retry policies. | Establish regular evaluation cadence and integrate findings into change management. |
 
 ## 6. Operational Procedures
