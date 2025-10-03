@@ -504,30 +504,6 @@
             emitToastMessages(payload);
         };
 
-        const handlePiiAnonymizeClick = (event) => {
-            const trigger = event.target;
-            if (!(trigger instanceof HTMLElement)) {
-                return;
-            }
-            if (!trigger.hasAttribute("data-pii-anonymize")) {
-                return;
-            }
-            event.preventDefault();
-            const selector = trigger.getAttribute("data-target");
-            if (!selector) {
-                return;
-            }
-            const form = trigger.closest?.(".pii-remediation-form");
-            const input = form && typeof form.querySelector === "function" ? form.querySelector(selector) : document.querySelector(selector);
-            if (!(input instanceof HTMLInputElement)) {
-                return;
-            }
-            const replacement = trigger.getAttribute("data-anonymize-value") || "";
-            input.value = replacement;
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.focus({ preventScroll: false });
-        };
-
         document.addEventListener("show-toasts", handleToastEvent);
 
         document.body?.addEventListener("htmx:configRequest", (evt) => {
@@ -579,8 +555,6 @@
         document.body?.addEventListener("htmx:sendError", () => {
             hideLoadingOverlay();
         });
-
-        document.body?.addEventListener("click", handlePiiAnonymizeClick);
 
         document.body?.addEventListener("htmx:afterSwap", (evt) => {
             const target = evt.detail?.target || null;

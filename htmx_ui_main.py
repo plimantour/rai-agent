@@ -58,6 +58,7 @@ from helpers.content_safety import (
 from helpers.pii_sanitizer import (
     PiiConfigurationError,
     PiiDetectionError,
+    PiiEntity,
     PiiServiceError,
     PiiScanResult,
     scan_text_for_pii,
@@ -983,6 +984,20 @@ def _find_threat_event(session: SessionState, source: str) -> Optional[ThreatFin
     return None
 
 
+def _suggest_pii_replacement(entity: PiiEntity) -> str:
+    """Return the default anonymized replacement for a detected PII entity."""
+
+    label = (entity.category or "").strip()
+    subcategory = (entity.subcategory or "").strip() if entity.subcategory else ""
+    if label and subcategory and subcategory.lower() not in label.lower():
+        label = f"{label} ({subcategory})"
+    elif not label and subcategory:
+        label = subcategory
+    if not label:
+        label = "REDACTED"
+    return label
+
+
 def _prepare_pii_entities_for_ui(pii_result: PiiScanResult) -> List[Dict[str, Any]]:
     payload: List[Dict[str, Any]] = []
     occurrence_map: Dict[Tuple[str, bool], int] = {}
@@ -1010,6 +1025,7 @@ def _prepare_pii_entities_for_ui(pii_result: PiiScanResult) -> List[Dict[str, An
                 "subcategory": entity.subcategory,
                 "confidence": entity.confidence_percent,
                 "occurrences": occurrences,
+                "suggested_replacement": _suggest_pii_replacement(entity),
             }
         )
     return payload

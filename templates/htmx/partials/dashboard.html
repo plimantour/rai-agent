@@ -50,8 +50,7 @@
                             <div class="pii-remediation-controls">
                                 <input type="hidden" name="pii_original__{{ entity.id }}" value="{{ entity.raw_text | e }}">
                                 <label class="sr-only" for="pii-input-{{ entity.id }}">Replacement for {{ entity.detected_text | e }}</label>
-                                <input type="text" id="pii-input-{{ entity.id }}" name="pii_replacement__{{ entity.id }}" value="{{ entity.raw_text | e }}" data-original="{{ entity.raw_text | e }}">
-                                <button type="button" class="button tertiary small" data-pii-anonymize data-target="#pii-input-{{ entity.id }}" data-anonymize-value="{{ entity.category | e }}">Anonymize</button>
+                                <input type="text" id="pii-input-{{ entity.id }}" name="pii_replacement__{{ entity.id }}" value="{{ entity.suggested_replacement | e }}" data-original="{{ entity.raw_text | e }}" data-suggested="{{ entity.suggested_replacement | e }}" placeholder="{{ entity.raw_text | e }}">
                             </div>
                         </div>
                         {% endfor %}
