@@ -8,6 +8,7 @@
 
 ### Changed
 - Proceeding after remediation now respects reviewer-approved terms by feeding them into a session-scoped allowlist so subsequent scans skip intentional false positives without suppressing fresh findings.
+- PII remediation inputs default to anonymized category/subcategory labels, removing the extra anonymize button while keeping original text as context via placeholders.
 
 ### Fixed
 - Repeated PII detections no longer surface duplicate cards; canonical keying collapses equivalent entities while preserving the highest confidence preview.

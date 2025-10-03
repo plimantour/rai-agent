@@ -8,9 +8,10 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Primary users**: Microsoft RAI champions and solution owners who have completed the mandated RAI training. Access is limited to this population through Entra ID authentication and a Key Vault–backed allow-list.
 - **User flows**:
        - **Streamlit UI (`streamlit_ui_main.py`)** – interactive experience for uploading a solution description, running an AI-assisted pre-flight analysis, generating draft assessments, and downloading outputs or log bundles.
+       - **HTMX/FastAPI UI (`htmx_ui_main.py`)** – web application with CSRF protection, live progress polling, toast notifications, and a remediation dashboard that gates uploads on malware scans, Azure Content Safety verdicts, prompt sanitization, and Azure AI Language PII findings before allowing generation.
        - **CLI (`main.py`)** – headless generation path for scripted scenarios.
 - **Pipeline orchestration**: `prompts/prompts_engineering_llmlingua.py` executes a deterministic 12-step prompt pipeline (Intended Uses → Disclosure of AI Interaction). Each step transforms the template via typed JSON results, with fallbacks to text when needed.
-- **Key integrations**: Azure OpenAI (Responses API via the official `AzureOpenAI` client), Azure Key Vault (secrets, user allow-list), Azure Blob Storage (access logs and admin downloads), optional llmlingua prompt compression, and local filesystem outputs (`rai-assessment-output/`).
+- **Key integrations**: Azure OpenAI (Responses API via the official `AzureOpenAI` client), Azure Content Safety Prompt Shields, Azure AI Language (PII entity detection), Azure Key Vault (secrets, user/administrator allow-lists), Azure Blob Storage (access logs and admin downloads), optional llmlingua prompt compression, ClamAV malware scanning, and local filesystem outputs (`rai-assessment-output/`).
 - **Deployment targets**: designed for Azure Container Apps with Managed Identity; supports local execution (Mac/Linux/WSL2) for development and air-gapped testing when Key Vault access is extended through the network security perimeter.
 
 ## 2. Security Controls
@@ -20,6 +21,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Interactive sign-in**: MSAL custom Streamlit component enforces Entra ID authentication. The login surface clearly links to the hosting Azure Container App URL.
 - **Authorization**: a Key Vault secret (`RAI-ASSESSMENT-USERS`) contains the approved user allow-list. Users outside the list are denied access to generation features.
 - **Admin privileges**: elevated actions (model selection, reasoning verbosity, log level changes, cache clearing) are only available to named administrators validated against the allow-list.
+- **Session integrity**: HTMX routes require a per-session CSRF token injected into forms and headers; POST requests missing or mismatching the token are rejected, limiting CSRF exploitation.
 
 ### 2.2 Secrets and Key Management
 
@@ -31,6 +33,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 
 - **Azure Container Apps**: recommended hosting pattern with Managed Identity and network security perimeter (NSP) support for private Key Vault access. Local execution scenarios require the NSP to approve the developer’s public IP or provide VPN access to the private endpoint (see runbook in repository documentation).
 - **Dependency hygiene**: Python dependencies pinned in `requirements.txt`; container images built via provided Dockerfile with hardened base image expectations (CVE scanning performed in CI/CD pipeline before production release – TODO to automate).
+- **Process isolation**: Uploaded documents are parsed inside a resource-constrained worker process (CPU, memory, and wall-clock limits) so hostile DOCX/PDF payloads cannot exhaust the main process.
 
 ### 2.4 Logging, Monitoring, and Auditability
 
@@ -39,11 +42,14 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Reasoning transparency**: administrators can opt-in to display reasoning summaries returned by the Responses API, supporting post-hoc review.
 - **Cost telemetry**: each run displays the calculated token cost (prompt, completion, reasoning tokens) to reinforce responsible usage and budgeting.
 
-### 2.5 Security Backlog
+### 2.5 Threat Scanning & Remediation Pipeline
 
-- Introduce rate limiting and concurrent session guards to mitigate credential sharing or brute-force attempts.
-- Replace local pickle cache with a managed, access-controlled cache (e.g., Azure Cache for Redis) or disable caching by default in production.
-- Expand automated scanning (SAST/DAST, dependency vulnerability checks) in CI prior to deployment.
+- **Malware scanning**: optional ClamAV command executes against every new upload, with a background warm-up to avoid cold-start latency. Failures block the upload and emit audit logs.
+- **Content safety**: Azure Content Safety Prompt Shields (`helpers/content_safety.py`) evaluates the prompt + document text via managed identity. Unsafe verdicts halt ingestion with user-facing guidance.
+- **Prompt sanitization**: uploaded text is normalized, directive phrases neutralized, template markers escaped, and high-risk jailbreak cues blocked; findings are logged for later review.
+- **PII detection & remediation**: Azure AI Language scans sanitized text in configurable chunks, deduplicates entities, and surfaces a remediation panel. Each finding defaults to an anonymized category/subcategory suggestion, while placeholders retain the detected term so reviewers can approve false positives (stored in a session-scoped allowlist) or supply custom redactions. Proceeding requires the scan to clear with either anonymized replacements or explicit approvals.
+- **State management**: approvals persist for the current upload session and are reapplied on subsequent scans to prevent duplicate findings while still re-validating every new document.
+
 
 ## 3. Data Privacy and Governance
 
@@ -52,12 +58,14 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Accepted inputs**: DOCX, PDF, JSON, or plaintext solution descriptions supplied by the user via upload. No other data sources are ingested.
 - **Minimization strategy**: prompts avoid reinjecting generated content except for the *Intended Uses* list, and system instructions explicitly forbid divulging hidden rules or modifying guardrails.
 - **User transparency**: the UI repeatedly states that outputs are AI-generated drafts requiring human validation before submission.
+- **PII hygiene**: sanitization occurs before storage—once the remediation panel clears, only redacted text (with anonymized replacements) is persisted as the stored solution description for downstream analysis/generation.
 
 ### 3.2 Storage, Retention, and Deletion
 
 - **Ephemeral files**: generated DOCX files are stored under `rai-assessment-output/` with a unique identifier. After the user initiates a download, the app removes the file from disk. Operators should periodically purge the folder to remove orphaned outputs (automation backlog item).
 - **Caching**: optional local pickle cache (`./cache/completions_cache.pkl`) stores LLM responses keyed by prompt hash to save costs. Users can disable caching per run; administrators can clear the cache from the UI. No automatic TTL is currently enforced (privacy risk noted below).
 - **Logging data**: blob logs capture user identity, action type, filenames, and timestamps only—generated content is not persisted in logs.
+- **Stored uploads**: HTMX session state preserves the sanitized document text and approved false positives only for the active session; clearing an upload or completing generation wipes the pending PII queue.
 
 ### 3.3 Data Residency and Transfers
 
@@ -68,6 +76,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Residual risk**: cache persistence on the container file system may hold fragments of sensitive solution content. Mitigation options include migrating to Azure Storage with encryption, adding automated expiry, or disabling caching in production deployments.
 - **Log sensitivity**: action logs contain the uploaded filename (potentially sensitive). Guidance: enforce naming policies and review log retention periods.
 - **Document lifecycle**: ensure deployment scripts include scheduled cleanup of `rai-assessment-output/` and `/logs` directories.
+- **PII approvals**: session-level allowlists reduce noise but could mask future detections if the same term appears in newly uploaded files; the scan reruns for each document to mitigate, but operators should monitor for overuse of approvals.
 
 ## 4. Responsible AI Risk Mitigation
 
@@ -95,6 +104,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - Reasoning summaries (when available) can be displayed for administrators to review the model’s rationale.
 - Cost breakdown and progress steps are surfaced in real time, supporting traceability of AI assistance.
 - Outputs are clearly labelled “AI-generated draft” in the UI and within the downloaded documents.
+- HTMX remediation logs include summarized threat findings (malware, prompt sanitizer, PII) so auditors can reconstruct which safeguards executed for a given upload.
 
 ### 4.5 Safety, Fairness, and Harm Mitigation
 
@@ -102,6 +112,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - Prompts instruct the model not to disclose system instructions or deviate from RAI assessment scope, mitigating prompt injection.
 - Azure OpenAI built-in content filtering and abuse monitoring apply to all requests.
 - Cost guardrails and reasoning effort controls discourage unnecessary high-latency, high-risk model configurations.
+- Pre-ingestion threat pipeline (malware, prompt shields, sanitization, PII detection) reduces the risk that hostile content reaches the LLM or that sensitive terms leak into draft outputs.
 
 ### 4.6 Responsible AI Backlog
 
@@ -128,12 +139,3 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Incident response**: Logs (local + blob) support triage; administrators can adjust log verbosity at runtime to capture additional detail. Formal incident response drills yet to be documented.
 - **Performance expectations**: Draft generation typically completes within 10–15 minutes, depending on model selection and template size. Cost outputs (from `helpers/completion_pricing.py`) help teams plan budget usage.
 
-## 7. Residual Risks and Next Steps
-
-1. **Cache persistence** – sensitive text may remain on disk if admins do not periodically purge caches; migrate to managed cache with TTL or enforce automatic cleanup on container restart.
-2. **Limited automated validation** – absence of schema enforcement increases risk of malformed outputs; prioritize integration of pydantic-based checks and unit tests.
-3. **Observability depth** – logs are semi-structured; move toward JSON logging with correlation IDs and latency metrics for each pipeline step.
-4. **Network perimeter posture** – document NSP configuration steps (infrastructure-as-code) to prevent drift when onboarding new environments.
-5. **Responsible AI evaluations** – schedule regular human evaluation sessions to benchmark model outputs for accuracy, fairness, and harmful content.
-
-The above plan will be refined during the compliance assessment cycle and updated alongside the Microsoft Responsible AI Standard review.

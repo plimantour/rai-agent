@@ -18,7 +18,7 @@ Organizations building custom AI solutions must complete a Responsible AI (RAI) 
 
 1. User supplies a `solution_description.docx` (CLI) or uploads via Streamlit or HTMX UI.
 2. System initializes Azure credentials + model deployment metadata from Key Vault (keyless if possible).
-3. Azure AI Language PII scan runs during ingestion, presenting a deduplicated remediation queue where reviewers can anonymize text or approve false positives; accepted terms feed a per-session allowlist before generation proceeds.
+3. Azure AI Language PII scan runs during ingestion, presenting a deduplicated remediation queue with pre-filled anonymized suggestions that reviewers can tweak or overwrite; accepted terms feed a per-session allowlist before generation proceeds.
 4. Multi-step LLM pipeline runs in dependency order:
 	- Intended Uses → Stakeholders → Goals (A5/T3, Fairness) → Scope → Solution Info → Assessments → Risks → Impact → Harms → Disclosure
 5. Each step requests structured JSON; processors map JSON into (search_token → replacement) pairs.

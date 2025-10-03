@@ -13,6 +13,7 @@ Core Differentiators:
 - Adaptive reasoning parameter handling (progressive fallback)
 - Cost accounting includes hidden reasoning tokens for transparency
 - Azure AI Language powered PII screening with deduplicated remediation UI so reviewers can anonymize or approve findings before generation continues
+- Default anonymized replacement suggestions per PII finding, reducing clicks while keeping original context readily visible for reviewers
 
 Primary Stakeholders: AI solution architects, compliance / RAI reviewers, engineering teams preparing assessment packages.
 

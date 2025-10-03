@@ -28,6 +28,7 @@
 - 2025-09-30: Centralized HTMX upload ingestion so malware and Content Safety scanners mark a `stored_solution_validated` flag and skip redundant scans during downstream analysis/generation, rewired upload/analysis/generation routes to reuse the shared helper, and refreshed the spinner/toast UX so users see explicit virus scan vs Responsible AI steps with notifications surfacing immediately even while the overlay remains until results render.
 - 2025-09-30 (later): Added a prompt sanitizer stage after Content Safety that normalizes uploaded text, neutralizes classic directive phrases, escapes template markers, and blocks high-risk jailbreak cues; sanitized text is persisted for reuse, spinner/toast messaging now covers the third safeguard, and sanitizer findings are logged for auditing.
 - 2025-09-30 (latest+4): Wired Azure AI Language PII detection into uploads with chunked scanning, automatic language detection, and configurable allowlists; HTMX remediation view now deduplicates entities, shows occurrence counts, and honors per-session approvals so users can anonymize or accept specific terms and still proceed without duplicates reappearing.
+- 2025-09-30 (latest+5): PII remediation inputs now pre-populate with anonymized category labels (no dedicated button) so reviewers start from a safe replacement, while placeholders retain the detected text for reference and keeping a term feeds the session allowlist for subsequent scans.
 
 ## What Works
 

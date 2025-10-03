@@ -202,7 +202,8 @@ Expect `attackDetected: false` for benign content. Substitute `documents` with a
 ## 🔒 PII Detection & Remediation Workflow
 - Azure AI Language scans every uploaded document before analysis, chunking large files and auto-detecting language (configurable via `AZURE_LANGUAGE_PII_*`).
 - Findings render in the HTMX remediation panel as a deduplicated list with confidence, category, and occurrence counts so reviewers focus on unique threats.
-- Users can anonymize spans in-place or approve specific terms as false positives; approved terms feed a per-session allowlist so subsequent scans treat them as safe without re-flagging.
+- Each finding defaults the replacement field to an anonymized suggestion (category/subcategory label) that the reviewer can fine-tune; the original value remains available via placeholder text for quick comparison.
+- Users may keep specific terms by editing the replacement back to the original, which feeds a per-session allowlist so subsequent scans treat approved false positives as safe without re-flagging.
 - Proceeding with only approved findings clears the threat gate, preserving user decisions while ensuring new uploads always re-run detection.
 
 ## 📦 Caching & Reproducibility

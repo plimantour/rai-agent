@@ -8,7 +8,7 @@
 - MSAL.js + Microsoft Graph (interactive auth flow shared across UIs)
 - Azure OpenAI (chat & reasoning models: gpt-4.x, gpt-5, o*-series) & optional Mistral endpoint (reasoning path now uncapped — no forced `max_completion_tokens`; Responses API used for sanctioned summaries when enabled)
 - Azure Content Safety Prompt Shields (managed identity auth, custom subdomain endpoint)
-- Azure AI Language (PII detection with chunked scans, allowlists, auto language detection)
+- Azure AI Language (PII detection with chunked scans, allowlists, auto language detection, default anonymized replacement suggestions)
 - ClamAV (command-line malware scanner warmed up on FastAPI startup)
 - Azure Identity (DefaultAzureCredential) for keyless auth
 - Azure Key Vault (secret & endpoint retrieval)
