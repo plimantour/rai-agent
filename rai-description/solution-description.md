@@ -13,6 +13,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 - **Pipeline orchestration**: `prompts/prompts_engineering_llmlingua.py` executes a deterministic 12-step prompt pipeline (Intended Uses → Disclosure of AI Interaction). Each step transforms the template via typed JSON results, with fallbacks to text when needed.
 - **Key integrations**: Azure OpenAI (Responses API via the official `AzureOpenAI` client), Azure Content Safety Prompt Shields, Azure AI Language (PII entity detection), Azure Key Vault (secrets, user/administrator allow-lists), Azure Blob Storage (access logs and admin downloads), optional llmlingua prompt compression, ClamAV malware scanning, and local filesystem outputs (`rai-assessment-output/`).
 - **Deployment targets**: designed for Azure Container Apps with Managed Identity; supports local execution (Mac/Linux/WSL2) for development and air-gapped testing when Key Vault access is extended through the network security perimeter.
+- **Inclusive UX**: HTMX and Streamlit surfaces provide keyboard navigation, screen-reader labels, live toast feedback, and user-selectable dark/light themes so reviewers with diverse accessibility needs can work comfortably while managing PII remediation tasks.
 
 ## 2. Security Controls
 
@@ -129,7 +130,7 @@ This document summarizes the current implementation of the RAI Assessment Copilo
 | Data & Privacy | Minimal data retention, cache toggle, Key Vault secrets, optional private endpoint enforcement. | Automated cache expiry, formal data retention schedule, encryption-at-rest roadmap for caches/logs. |
 | Security | Managed Identity for secrets, NSP-ready deployment, rotating logs, download-once deletion. | Add rate limiting, vulnerability scanning, incident response playbook. |
 | Transparency | UI warnings, downloadable logs, cost reporting, optional reasoning summary. | Provide user-facing changelog of model/config updates and link to evaluation artifacts. |
-| User Experience & Accessibility | Streamlit UI with progress indicators and manual editing requirements. | Broader accessibility review (keyboard navigation, screen reader support) still pending. |
+| User Experience & Accessibility | HTMX and Streamlit experiences support keyboard navigation, screen-reader labels, toast feedback, and a dark/light theme toggle; PII remediation includes single-click deanonymize controls. | Formal accessibility audit, ARIA live regions, and larger text/reduced motion settings remain on the backlog. |
 | Continuous Improvement | Memory bank tracks roadmap; backlog includes schema validation, structured telemetry, Redis cache, retry policies. | Establish regular evaluation cadence and integrate findings into change management. |
 
 ## 6. Operational Procedures
