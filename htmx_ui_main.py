@@ -1567,13 +1567,35 @@ async def _ingest_new_solution_upload(session: SessionState, upload: UploadFile)
         summary="Malware scan cleared the uploaded file.",
         severity="info",
     )
-    if not await _validate_solution_text_with_prompt_shield(session, text, display_name):
+    safe, promptshield_result, promptshield_detail = await _validate_solution_text_with_prompt_shield(
+        session, text, display_name
+    )
+    if not safe:
         session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
+        threat_items: List[str] = []
+        detail_note = promptshield_detail
+        if promptshield_result:
+            if promptshield_result.reason and promptshield_result.reason not in (detail_note or ""):
+                threat_items.append(promptshield_result.reason)
+            if promptshield_result.attack_types:
+                threat_items.append(
+                    "Detected attack types: " + ", ".join(sorted({atype for atype in promptshield_result.attack_types if atype}))
+                )
+            if promptshield_result.categories:
+                threat_items.append(
+                    "Categories: " + ", ".join(sorted({cat for cat in promptshield_result.categories if cat}))
+                )
+            if promptshield_result.confidence:
+                threat_items.append(f"Confidence: {promptshield_result.confidence}")
+            if not detail_note and promptshield_result.reason:
+                detail_note = promptshield_result.reason
         _record_threat_event(
             session,
             source="Azure Content Safety",
             summary="Azure Content Safety rejected the document.",
             severity="error",
+            items=threat_items,
+            details=detail_note,
             blocked=True,
         )
         return None
@@ -1713,8 +1735,13 @@ async def _ensure_stored_solution_valid(session: SessionState) -> bool:
         return True
     session.messages.append("Running responsible AI scan on stored content...")
     display_name = session.stored_solution_filename or "Stored solution description"
-    if not await _validate_solution_text_with_prompt_shield(session, session.stored_solution_text, display_name):
+    safe, promptshield_result, promptshield_detail = await _validate_solution_text_with_prompt_shield(
+        session, session.stored_solution_text, display_name
+    )
+    if not safe:
         session.messages.append("Scan blocked: Azure Content Safety rejected the document.")
+        if promptshield_detail:
+            session.messages.append(promptshield_detail)
         _clear_stored_solution(session)
         return False
     session.messages.append("Scan complete: no threats detected.")
@@ -2305,9 +2332,9 @@ async def _validate_solution_text_with_prompt_shield(
     session: SessionState,
     text: str,
     label: str,
-) -> bool:
+) -> Tuple[bool, Optional["PromptShieldResult"], Optional[str]]:
     if not text:
-        return True
+        return True, None, None
 
     def _scan() -> "PromptShieldResult":
         return ensure_uploaded_text_safe(text, label=label)
@@ -2319,20 +2346,26 @@ async def _validate_solution_text_with_prompt_shield(
         session.messages.append(
             "Upload blocked: Azure Content Safety configuration is incomplete. Please contact an administrator."
         )
-        return False
+        detail = str(exc) or "Azure Content Safety configuration error"
+        session.messages.append(detail)
+        return False, None, detail
     except PromptShieldServiceError as exc:
         log.error("Prompt Shield service error for %s: %s", label, exc)
         session.messages.append(
             "Upload blocked: Azure Content Safety could not validate the document. Try again later."
         )
-        return False
+        detail = str(exc) or "Azure Content Safety service error"
+        session.messages.append(detail)
+        return False, None, detail
     except PromptShieldAttackDetected as exc:
         log.warning("Prompt Shield blocked %s: %s", label, exc)
         session.messages.append(
             "Azure Content Safety detected a potential prompt injection in the uploaded document."
         )
-        session.messages.append(str(exc))
-        return False
+        detail = str(exc) or "Azure Content Safety rejected the document"
+        session.messages.append(detail)
+        result = getattr(exc, "result", None)
+        return False, result, detail
 
     log.info(
         "Azure Content Safety cleared %s (shield=%s confidence=%s)",
@@ -2340,4 +2373,4 @@ async def _validate_solution_text_with_prompt_shield(
         getattr(result, "shielding_type", None),
         getattr(result, "confidence", None),
     )
-    return True
+    return True, result, None

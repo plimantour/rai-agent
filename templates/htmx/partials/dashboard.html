@@ -46,11 +46,17 @@
                                     · {{ entity.occurrences }} occurrences
                                     {% endif %}
                                 </span>
+                                {% if entity.suggested_replacement %}
+                                <span class="pii-suggestion">Suggested anonymized value: {{ entity.suggested_replacement | e }}</span>
+                                {% endif %}
                             </div>
                             <div class="pii-remediation-controls">
                                 <input type="hidden" name="pii_original__{{ entity.id }}" value="{{ entity.raw_text | e }}">
                                 <label class="sr-only" for="pii-input-{{ entity.id }}">Replacement for {{ entity.detected_text | e }}</label>
                                 <input type="text" id="pii-input-{{ entity.id }}" name="pii_replacement__{{ entity.id }}" value="{{ entity.suggested_replacement | e }}" data-original="{{ entity.raw_text | e }}" data-suggested="{{ entity.suggested_replacement | e }}" placeholder="{{ entity.raw_text | e }}">
+                                {% if entity.raw_text %}
+                                <button type="button" class="button tertiary small pii-deanonymize" data-target="pii-input-{{ entity.id }}" title="Replace anonymized value with the detected text">Deanonymize</button>
+                                {% endif %}
                             </div>
                         </div>
                         {% endfor %}

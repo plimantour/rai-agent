@@ -25,6 +25,23 @@ _TOKEN_REFRESH_BUFFER = 60  # seconds
 _SESSION = requests.Session()
 
 
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return default
+
+
+_USER_PROMPT_LIMIT = _get_int_env("AZURE_CONTENT_SAFETY_USER_PROMPT_LIMIT", 10000)
+_DOCUMENT_LIMIT = _get_int_env("AZURE_CONTENT_SAFETY_DOCUMENT_LIMIT", _USER_PROMPT_LIMIT)
+_MAX_DOCUMENTS = _get_int_env("AZURE_CONTENT_SAFETY_MAX_DOCUMENTS", 20)
+
+
 class PromptShieldConfigurationError(RuntimeError):
     """Raised when Prompt Shields can't run due to misconfiguration."""
 
@@ -35,6 +52,10 @@ class PromptShieldServiceError(RuntimeError):
 
 class PromptShieldAttackDetected(RuntimeError):
     """Raised when Prompt Shields flags the uploaded content as unsafe."""
+
+    def __init__(self, message: str, *, result: Optional["PromptShieldResult"] = None) -> None:
+        super().__init__(message)
+        self.result: Optional["PromptShieldResult"] = result
 
 
 @dataclass
@@ -97,6 +118,22 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
 
 
+def _chunk_for_shield(text: str, limit: int) -> List[str]:
+    trimmed = (text or "").strip()
+    if not trimmed:
+        return []
+    if limit <= 0 or len(trimmed) <= limit:
+        return [trimmed]
+    chunks: List[str] = []
+    cursor = 0
+    total = len(trimmed)
+    while cursor < total:
+        chunk = trimmed[cursor : cursor + limit]
+        chunks.append(chunk)
+        cursor += limit
+    return chunks
+
+
 def _coerce_documents(documents: Optional[Iterable[str]]) -> List[str]:
     docs: List[str] = []
     if documents:
@@ -104,8 +141,7 @@ def _coerce_documents(documents: Optional[Iterable[str]]) -> List[str]:
             if doc is None:
                 continue
             doc_str = str(doc)
-            if doc_str.strip():
-                docs.append(doc_str)
+            docs.extend(_chunk_for_shield(doc_str, _DOCUMENT_LIMIT))
     return docs
 
 
@@ -117,9 +153,10 @@ def _post_with_retry(url: str, payload: Dict[str, Any], headers: Dict[str, str],
             if response.status_code // 100 != 2:
                 detail = _safe_json(response)
                 log.warning("[promptshields] non-success response %s detail=%s", response.status_code, detail)
-                raise PromptShieldServiceError(
-                    f"Prompt Shields call failed with status {response.status_code}"
-                )
+                message = f"Prompt Shields call failed with status {response.status_code}"
+                if detail:
+                    message = f"{message}: {detail}"
+                raise PromptShieldServiceError(message)
             try:
                 return response.json()
             except ValueError as exc:
@@ -134,6 +171,8 @@ def _post_with_retry(url: str, payload: Dict[str, Any], headers: Dict[str, str],
             sleep_for = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
             time.sleep(sleep_for)
     assert last_exc is not None
+    if isinstance(last_exc, PromptShieldServiceError):
+        raise last_exc
     raise PromptShieldServiceError("Prompt Shields request failed") from last_exc
 
 
@@ -162,12 +201,34 @@ def scan_uploaded_text(
 
     endpoint = _get_endpoint()
     api_version = _get_api_version()
-    doc_list = _coerce_documents(documents)
-    cache_key = _hash_text("\x1f".join([clean_text, *doc_list]))
+    user_prompt = clean_text
+    remainder_docs: List[str] = []
+    if len(user_prompt) > _USER_PROMPT_LIMIT:
+        user_prompt = clean_text[:_USER_PROMPT_LIMIT]
+        remainder = clean_text[_USER_PROMPT_LIMIT:]
+        remainder_docs = _chunk_for_shield(remainder, _DOCUMENT_LIMIT)
+        log.debug(
+            "[promptshields] truncated %s to %s chars and split remainder into %s document chunk(s)",
+            label,
+            _USER_PROMPT_LIMIT,
+            len(remainder_docs),
+        )
+
+    doc_list = remainder_docs + _coerce_documents(documents)
+    if len(doc_list) > _MAX_DOCUMENTS:
+        log.warning(
+            "[promptshields] %s produced %s document chunks; trimming to first %s entries to satisfy API limits",
+            label,
+            len(doc_list),
+            _MAX_DOCUMENTS,
+        )
+        doc_list = doc_list[:_MAX_DOCUMENTS]
+
+    cache_key = _hash_text("\x1f".join([user_prompt, *doc_list]))
     if cache_key in _scan_cache:
         return _scan_cache[cache_key]
 
-    payload = {"userPrompt": clean_text}
+    payload = {"userPrompt": user_prompt}
     if doc_list:
         payload["documents"] = doc_list
 
@@ -242,6 +303,7 @@ def ensure_uploaded_text_safe(
         if result.attack_types:
             detail_parts.append(f"types={list(result.attack_types)}")
         raise PromptShieldAttackDetected(
-            f"Prompt Shields flagged {label} as unsafe ({'; '.join(detail_parts) or 'unspecified reason'})."
+            f"Prompt Shields flagged {label} as unsafe ({'; '.join(detail_parts) or 'unspecified reason'}).",
+            result=result,
         )
     return result

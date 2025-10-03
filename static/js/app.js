@@ -333,6 +333,94 @@
         });
     }
 
+    function updatePiiInputState(input) {
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+        const value = (input.value || "").trim();
+        const original = (input.dataset.original || "").trim();
+        const suggested = (input.dataset.suggested || "").trim();
+        const matchesOriginal = original.length > 0 && value === original;
+        const matchesSuggested = suggested.length > 0 && value === suggested;
+        input.classList.toggle("is-deanonymized", matchesOriginal);
+        input.classList.toggle("is-suggested", matchesSuggested && !matchesOriginal);
+        if (!matchesOriginal && !matchesSuggested) {
+            input.classList.remove("is-deanonymized", "is-suggested");
+        }
+    }
+
+    function setupPiiRemediationForms(scope) {
+        const root = scope && typeof scope.querySelectorAll === "function" ? scope : document;
+        const forms = root.querySelectorAll?.(".pii-remediation-form");
+        if (!forms || forms.length === 0) {
+            return;
+        }
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+            if (form.dataset.piiInit === "true") {
+                return;
+            }
+            form.dataset.piiInit = "true";
+
+            const inputs = form.querySelectorAll(".pii-remediation-controls input[type='text']");
+            inputs.forEach((input) => {
+                if (!(input instanceof HTMLInputElement)) {
+                    return;
+                }
+                const handler = () => updatePiiInputState(input);
+                input.addEventListener("input", handler);
+                input.addEventListener("change", handler);
+                updatePiiInputState(input);
+            });
+
+            form.addEventListener("click", (event) => {
+                const trigger = event.target instanceof HTMLElement ? event.target.closest(".pii-deanonymize") : null;
+                if (!trigger) {
+                    return;
+                }
+                event.preventDefault();
+                const targetId = trigger.dataset?.target;
+                let input = null;
+                if (targetId) {
+                    input = form.querySelector(`#${targetId}`);
+                }
+                if (!(input instanceof HTMLInputElement)) {
+                    const controls = trigger.closest(".pii-remediation-controls");
+                    input = controls?.querySelector("input[type='text']") || null;
+                }
+                if (!(input instanceof HTMLInputElement)) {
+                    return;
+                }
+                const originalValue = input.dataset.original || input.placeholder || "";
+                if (originalValue.length === 0) {
+                    return;
+                }
+                input.value = originalValue;
+                updatePiiInputState(input);
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+                if (typeof input.focus === "function") {
+                    try {
+                        input.focus({ preventScroll: false });
+                    } catch (err) {
+                        input.focus();
+                    }
+                    try {
+                        const end = input.value.length;
+                        if (typeof input.setSelectionRange === "function") {
+                            input.setSelectionRange(end, end);
+                        }
+                    } catch (err) {
+                        // Ignore focus/selection errors from unsupported inputs
+                    }
+                }
+            });
+        });
+    }
+
     function setupUploadForm(scope) {
         const root = scope && typeof scope.querySelector === "function" ? scope : document;
         const form = (typeof root.querySelector === "function" ? root.querySelector("#solution-form") : null) || document.getElementById("solution-form");
@@ -422,6 +510,13 @@
         });
     }
 
+    function hydrateDynamicContent(scope) {
+        const root = scope && typeof scope.querySelectorAll === "function" ? scope : document;
+        consumeToastPayloads(root);
+        setupUploadForm(root);
+        setupPiiRemediationForms(root);
+    }
+
     function focusFirstInteractive(container) {
         if (!container || typeof container.querySelectorAll !== "function") {
             return;
@@ -497,7 +592,13 @@
 
     function setupEventHandlers() {
         syncInitialTheme();
-        setupUploadForm(document);
+        hydrateDynamicContent(document);
+
+        if (window.htmx && typeof window.htmx.onLoad === "function") {
+            window.htmx.onLoad((content) => {
+                hydrateDynamicContent(content);
+            });
+        }
         const handleToastEvent = (event) => {
             const detail = event?.detail;
             const payload = detail && Object.prototype.hasOwnProperty.call(detail, "value") ? detail.value : detail;
@@ -571,7 +672,7 @@
             } else {
                 setTimeout(syncToastPayloads, 0);
             }
-            setupUploadForm(target || document);
+            hydrateDynamicContent(target || document);
             const xhr = evt.detail?.xhr;
             if (xhr) {
                 const triggerHeader = xhr.getResponseHeader("HX-Trigger");
@@ -628,10 +729,8 @@
     if (document.readyState === "loading") {
         document.addEventListener(READY_EVENT, () => {
             setupEventHandlers();
-            consumeToastPayloads(document);
         });
     } else {
         setupEventHandlers();
-        consumeToastPayloads(document);
     }
 })();
